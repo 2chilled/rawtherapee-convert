@@ -1,0 +1,47 @@
+name:                rawtherapee-convert
+version:             0.1.0.0
+synopsis:            Small program which uses rawtherapee to convert raw files to jpgs 
+description:         Please see README.md
+homepage:            https://github.com/2chilled/rawtherapee-convert#readme
+license:             GPL-3
+license-file:        LICENSE
+author:              Matthias Herrmann
+maintainer:          matthias.mh.herrmann@gmail.com
+copyright:           Copyright: (c) 2016 Matthias Herrmann
+category:            Image Processing
+build-type:          Simple
+cabal-version:       >=1.10
+
+executable rawtherapee-convert
+  hs-source-dirs:      src
+  main-is:             Main.hs
+  default-language:    Haskell2010
+  build-depends:       base >= 4.7 && < 5
+                     , rawtherapee-convert
+  ghc-options:         -Wall
+
+
+library rawtherapee-convert
+  exposed-modules:     Graphics.RawTherapeeConvert
+  hs-source-dirs:      lib
+  default-language:    Haskell2010
+  build-depends:       base >= 4.7 && < 5
+  ghc-options:         -Wall
+
+test-suite rawtherapee-convert-tests
+  type:              exitcode-stdio-1.0
+  hs-source-dirs:    test
+  main-is:           TestMain.hs
+  other-modules:     Graphics.RawTherapeeConvert.Test
+  build-depends:     base >=4.7 && < 5
+                   , QuickCheck >=2.0
+                   , test-framework >=0.1.0
+                   , test-framework-quickcheck2 >=0.3.0.3
+                   , test-framework-hunit >= 0.3.0.2
+                   , HUnit >= 1.2.5.2
+                   , rawtherapee-convert
+  default-language:  Haskell2010
+
+source-repository head
+  type:           git
+  location:       https://github.com/2chilled/rawtherapee-convert
