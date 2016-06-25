@@ -21,7 +21,7 @@ executable rawtherapee-convert
   ghc-options:         -Wall
 
 
-library rawtherapee-convert
+library
   exposed-modules:     Graphics.RawTherapeeConvert
   hs-source-dirs:      lib
   default-language:    Haskell2010
@@ -29,18 +29,19 @@ library rawtherapee-convert
   ghc-options:         -Wall
 
 test-suite rawtherapee-convert-tests
-  type:              exitcode-stdio-1.0
-  hs-source-dirs:    test
-  main-is:           TestMain.hs
-  other-modules:     Graphics.RawTherapeeConvert.Test
-  build-depends:     base >=4.7 && < 5
-                   , QuickCheck >=2.0
-                   , test-framework >=0.1.0
-                   , test-framework-quickcheck2 >=0.3.0.3
-                   , test-framework-hunit >= 0.3.0.2
-                   , HUnit >= 1.2.5.2
-                   , rawtherapee-convert
-  default-language:  Haskell2010
+  type:                exitcode-stdio-1.0
+  hs-source-dirs:      test
+  main-is:             TestMain.hs
+  other-modules:       Graphics.RawTherapeeConvert.Test
+  build-depends:       base >=4.7 && < 5
+                     , QuickCheck >=2.0
+                     , test-framework >=0.1.0
+                     , test-framework-quickcheck2 >=0.3.0.3
+                     , test-framework-hunit >= 0.3.0.2
+                     , HUnit >= 1.2.5.2
+                     , rawtherapee-convert
+  default-language:    Haskell2010
+  ghc-options:         -Wall
 
 source-repository head
   type:           git
