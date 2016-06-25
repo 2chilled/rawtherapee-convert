@@ -2,6 +2,7 @@
 Small program which uses rawtherapee to convert raw files to jpgs. This is currently UNDER DEVELOPMENT.
 
 Features (will) include:
+
 1. Process a given directory recursively and mirror it's structure under the given output path. That way you
    get the same directory structure for your converted raw files.
 2. Override already converted raw files ONLY if there is a pp3 given which contains different settings than
@@ -14,3 +15,7 @@ Features (will) include:
    that is set as default within the rawtherapee context.
 6. Log each decided action to stdout so the user knows what's going on.
 7. A dry run is possible, doing nothing but logging what would be done.
+
+## Why does (will) this exist?
+This is exactly what the author needs for realising a smooth raw conversion process. The files will get
+converted to a raspberry pi and distributed within LAN from there. Maybe it's useful for anyone else.
