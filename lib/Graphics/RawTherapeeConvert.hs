@@ -1,10 +1,14 @@
+{-# LANGUAGE FlexibleContexts #-}
 module Graphics.RawTherapeeConvert where
 
-import Control.Monad.Trans.Resource (MonadResource, runResourceT)
+import Control.Monad.Trans.Resource (MonadResource, runResourceT, MonadBaseControl, ResourceT)
+import Control.Monad.Base (liftBase)
+import Data.Monoid ((<>))
 import qualified Data.Conduit.Combinators as CC
-import Data.Conduit (($$), Source)
+import Data.Conduit ((=$=), ($$), Source, handleC, yield)
 import qualified Data.Text as T
 import Data.Text (unpack, pack, Text, breakOn)
+import Control.Exception (IOException)
 
 newtype RootSourceDir = RootSourceDir FilePath
 
@@ -14,11 +18,21 @@ type SourceFilePath = FilePath
 
 type TargetDirPath = FilePath
 
-filePaths :: MonadResource m => FilePath -> Source m FilePath
-filePaths = CC.sourceDirectoryDeep False 
+filePaths :: (MonadResource m, MonadBaseControl IO m) => FilePath -> Source m FilePath
+filePaths = errorHandled . (CC.sourceDirectoryDeep False)
+  where errorHandled conduit = 
+          let eitherConduit = CC.map Right
+              maybeConduit = CC.map (const Nothing `either` Just)
+              filteredBySome = CC.concatMap id
+              logConduit = let msg exception = "Could not access file: " <> show exception
+                               printMsg = liftBase . putStrLn . msg
+                               doNothing = const . liftBase . return $ ()
+                           in CC.iterM $ printMsg `either` doNothing
+              catched = handleC (\e -> yield (Left (e :: IOException)))
+          in catched (conduit =$= eitherConduit) =$= logConduit =$= maybeConduit =$= filteredBySome
 
-tmpPaths :: MonadResource m => Source m FilePath
-tmpPaths = filePaths "/home/chief/Medien/Bilder"
+tmpPaths :: Source (ResourceT IO) FilePath
+tmpPaths = filePaths "/tmp"
 
 printTmpPaths :: IO ()
 printTmpPaths = runResourceT $ tmpPaths $$ CC.print 
