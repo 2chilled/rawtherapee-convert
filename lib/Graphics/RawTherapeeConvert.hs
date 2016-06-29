@@ -9,6 +9,7 @@ import Data.Conduit ((=$=), ($$), Source, handleC, yield)
 import qualified Data.Text as T
 import Data.Text (unpack, pack, Text, breakOn)
 import Control.Exception (IOException)
+import Data.String.Utils (startswith)
 
 newtype RootSourceDir = RootSourceDir FilePath
 
@@ -20,7 +21,7 @@ type TargetDirPath = FilePath
 
 filePaths :: (MonadResource m, MonadBaseControl IO m) => FilePath -> Source m FilePath
 filePaths = errorHandled . (CC.sourceDirectoryDeep False)
-  where errorHandled conduit = 
+  where errorHandled conduit =
           let eitherConduit = CC.map Right
               maybeConduit = CC.map (const Nothing `either` Just)
               filteredBySome = CC.concatMap id
@@ -35,17 +36,26 @@ tmpPaths :: Source (ResourceT IO) FilePath
 tmpPaths = filePaths "/tmp"
 
 printTmpPaths :: IO ()
-printTmpPaths = runResourceT $ tmpPaths $$ CC.print 
+printTmpPaths = runResourceT $ tmpPaths $$ CC.print
 
-getTargetDirectoryPath :: RootSourceDir -> RootTargetDir -> SourceFilePath -> TargetDirPath
-getTargetDirectoryPath (RootSourceDir rootSourceDir) 
-                       (RootTargetDir rootTargetDir) 
-                       sourceFilePath = unpack $ replaceOne (pack rootSourceDir) 
-                                                            (pack rootTargetDir) 
-                                                            (pack sourceFilePath)
+data GetTargetDirectoryException = SourceFilePathIsNotUnderRootSourceDir 
+  deriving (Show, Eq)
+
+getTargetDirectoryPath :: RootSourceDir
+                       -> RootTargetDir
+                       -> SourceFilePath
+                       -> Either GetTargetDirectoryException TargetDirPath
+getTargetDirectoryPath (RootSourceDir rootSourceDir)
+                       (RootTargetDir rootTargetDir)
+                       sourceFilePath | sourceFilePath `startswith` rootSourceDir =
+                                                    Right . unpack $ replaceOne (pack rootSourceDir)
+                                                                        (pack rootTargetDir)
+                                                                        (pack sourceFilePath)
+                                      | otherwise = Left SourceFilePathIsNotUnderRootSourceDir
+
   where replaceOne :: Text -> Text -> Text -> Text
         replaceOne pattern substitution text
           | T.null back = text    -- pattern doesn't occur
-          | otherwise = T.concat [front, substitution, T.drop (T.length pattern) back] 
+          | otherwise = T.concat [front, substitution, T.drop (T.length pattern) back]
             where (front, back) = breakOn pattern text
 
