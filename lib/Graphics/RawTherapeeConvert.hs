@@ -12,7 +12,8 @@ import Control.Exception (IOException)
 import Data.String.Utils (startswith)
 import System.Log.Logger (updateGlobalLogger, setLevel, Priority (DEBUG), addHandler, infoM)
 import System.Log.Handler.Syslog (openlog, Option (PID), Facility (USER))
-import System.FilePath (takeExtension)
+import System.FilePath (takeExtension, (<.>))
+import System.Directory (doesFileExist)
 
 newtype RootSourceDir = RootSourceDir FilePath
 
@@ -58,6 +59,17 @@ getTargetDirectoryPath (RootSourceDir rootSourceDir)
           | T.null back = text    -- pattern doesn't occur
           | otherwise = T.concat [front, substitution, T.drop (T.length pattern) back]
             where (front, back) = breakOn pattern text
+
+type CR2FilePath = FilePath
+type PP3FilePath = FilePath
+
+findPp3 :: CR2FilePath -> IO (Maybe PP3FilePath)
+findPp3 cr2 = let pp3 = cr2 <.> "pp3"
+              in do
+                doesExist <- doesFileExist pp3
+                return $ if doesExist then Just pp3 else Nothing
+
+--Logging
 
 loggerName :: String
 loggerName = "Graphics.RawTherapeeConvert"

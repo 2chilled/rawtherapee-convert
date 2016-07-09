@@ -3,7 +3,7 @@ import Test.Framework (Test, testGroup)
 import Test.Framework.Providers.HUnit (testCase)
 import Test.Framework.Providers.QuickCheck2 (testProperty)
 import Test.QuickCheck (Property, Arbitrary, arbitrary, property)
-import Test.HUnit (Assertion, assertEqual)
+import Test.HUnit (Assertion, assertEqual, assertBool)
 import Data.Monoid ((<>), Sum)
 import System.FilePath (pathSeparator, takeDirectory, (</>))
 import Graphics.RawTherapeeConvert
@@ -14,6 +14,7 @@ import Data.Foldable (sequenceA_)
 import qualified Data.Conduit.Combinators as CC
 import Data.Conduit ((=$=), runConduit)
 import Control.Monad.Trans.Resource (runResourceT)
+import Data.Maybe (isJust, isNothing)
 
 tests :: [Test]
 tests = [
@@ -22,6 +23,8 @@ tests = [
       getTargetDirectoryPathShouldReturnALeftIfSourceFilePathIsNotASubpathOfRootSourceDir
   , testCase "cr2Paths should be a stream emitting cr2 files only"
       cr2PathsShouldBeAStreamEmittingCr2FilesOnly
+  , testCase "findPp3 should return the file path to the pp3 if it exists"
+      findPp3ShouldReturnTheFilePathToThePp3IfItExists
     ]
   ]
 
@@ -69,11 +72,23 @@ withEmptyTmpDir f = do
         randomString :: IO String
         randomString = show <$> (randomIO :: IO Int)
 
+type Parent = FilePath
+createFile :: Parent -> FilePath -> IO FilePath
+createFile p fp = let resultPath = p </> fp
+                  in resultPath <$ writeFile resultPath ""
+
 cr2PathsShouldBeAStreamEmittingCr2FilesOnly :: Assertion
-cr2PathsShouldBeAStreamEmittingCr2FilesOnly = withEmptyTmpDir $ \dir ->
-  let createFile = flip writeFile "" . (dir </>)
-  in do
-    sequenceA_ $ createFile <$> ["file1.CR2", "file2.CR2", "any.txt"]
-    let toTest = cr2Paths dir =$= CC.map (const (1 :: Sum Int)) =$= CC.fold
-    result <- runResourceT . runConduit $ toTest
-    assertEqual "" 2 result
+cr2PathsShouldBeAStreamEmittingCr2FilesOnly = withEmptyTmpDir $ \dir -> do
+  sequenceA_ $ createFile dir <$> ["file1.CR2", "file2.CR2", "any.txt"]
+  let toTest = cr2Paths dir =$= CC.map (const (1 :: Sum Int)) =$= CC.fold
+  result <- runResourceT . runConduit $ toTest
+  assertEqual "" 2 result
+
+findPp3ShouldReturnTheFilePathToThePp3IfItExists :: Assertion
+findPp3ShouldReturnTheFilePathToThePp3IfItExists = withEmptyTmpDir $ \dir -> do
+  [f1Cr2, _, f2Cr2] <- sequenceA $ createFile dir <$> ["file1.CR2", "file1.CR2.pp3", "file2.CR2"]
+  result1 <- findPp3 f1Cr2
+  result2 <- findPp3 f2Cr2
+  assertBool "" (isJust result1)
+  assertBool "" (isNothing result2)
+
