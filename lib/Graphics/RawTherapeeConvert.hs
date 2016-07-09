@@ -65,9 +65,8 @@ type PP3FilePath = FilePath
 
 findPp3 :: CR2FilePath -> IO (Maybe PP3FilePath)
 findPp3 cr2 = let pp3 = cr2 <.> "pp3"
-              in do
-                doesExist <- doesFileExist pp3
-                return $ if doesExist then Just pp3 else Nothing
+                  toMaybe p = if p then Just pp3 else Nothing
+              in toMaybe <$> doesFileExist pp3
 
 --Logging
 
@@ -81,4 +80,3 @@ configureLogger :: IO ()
 configureLogger = do
   sysLogHandler <- openlog programName [PID] USER DEBUG
   updateGlobalLogger loggerName (setLevel DEBUG . addHandler sysLogHandler)
-
