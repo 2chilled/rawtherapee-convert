@@ -29,7 +29,7 @@ filePaths = errorHandled . (CC.sourceDirectoryDeep False)
               filteredBySome = CC.concatMap id
               logConduit = let msg exception = "Could not access file: " <> show exception
                                printMsg = liftBase . infoM loggerName . msg
-                               doNothing = const . liftBase . return $ ()
+                               doNothing = const . return $ ()
                            in CC.iterM $ printMsg `either` doNothing
               catched = handleC (\e -> yield (Left (e :: IOException)))
           in catched (conduit =$= eitherConduit) =$= logConduit =$= maybeConduit =$= filteredBySome
@@ -70,5 +70,5 @@ programName = "rawtherapee-convert"
 configureLogger :: IO ()
 configureLogger = do
   sysLogHandler <- openlog programName [PID] USER DEBUG
-  updateGlobalLogger loggerName (setLevel DEBUG . addHandler sysLogHandler )
+  updateGlobalLogger loggerName (setLevel DEBUG . addHandler sysLogHandler)
 
