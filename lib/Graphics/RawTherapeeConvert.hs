@@ -10,8 +10,7 @@ import qualified Data.Text as T
 import Data.Text (unpack, pack, Text, breakOn)
 import Control.Exception (IOException)
 import Data.String.Utils (startswith)
-import System.Log.Logger (updateGlobalLogger, setLevel, Priority (DEBUG), addHandler, infoM)
-import System.Log.Handler.Syslog (openlog, Option (PID), Facility (USER))
+import System.Log.Logger (infoM)
 import System.FilePath (takeExtension, (<.>))
 import System.Directory (doesFileExist)
 
@@ -23,8 +22,10 @@ type SourceFilePath = FilePath
 
 type TargetDirPath = FilePath
 
-filePaths :: (MonadResource m, MonadBaseControl IO m) => FilePath -> Source m FilePath
-filePaths = errorHandled . (CC.sourceDirectoryDeep False)
+newtype LoggerName = LoggerName String
+
+filePaths :: (MonadResource m, MonadBaseControl IO m) => LoggerName -> FilePath -> Source m FilePath
+filePaths (LoggerName loggerName) = errorHandled . (CC.sourceDirectoryDeep False)
   where errorHandled conduit =
           let eitherConduit = CC.map Right
               maybeConduit = CC.map (const Nothing `either` Just)
@@ -36,8 +37,8 @@ filePaths = errorHandled . (CC.sourceDirectoryDeep False)
               catched = handleC (\e -> yield (Left (e :: IOException)))
           in catched (conduit =$= eitherConduit) =$= logConduit =$= maybeConduit =$= filteredBySome
 
-cr2Paths :: (MonadResource m, MonadBaseControl IO m) => FilePath -> Source m FilePath
-cr2Paths fp = filePaths fp =$= CC.filter ((== ".CR2") . takeExtension)
+cr2Paths :: (MonadResource m, MonadBaseControl IO m) => LoggerName -> FilePath -> Source m FilePath
+cr2Paths ln fp = filePaths ln fp =$= CC.filter ((== ".CR2") . takeExtension)
 
 data GetTargetDirectoryException = SourceFilePathIsNotUnderRootSourceDir 
   deriving (Show, Eq)
@@ -68,15 +69,3 @@ findPp3 cr2 = let pp3 = cr2 <.> "pp3"
                   toMaybe p = if p then Just pp3 else Nothing
               in toMaybe <$> doesFileExist pp3
 
---Logging
-
-loggerName :: String
-loggerName = "Graphics.RawTherapeeConvert"
-
-programName :: String
-programName = "rawtherapee-convert"
-
-configureLogger :: IO ()
-configureLogger = do
-  sysLogHandler <- openlog programName [PID] USER DEBUG
-  updateGlobalLogger loggerName (setLevel DEBUG . addHandler sysLogHandler)

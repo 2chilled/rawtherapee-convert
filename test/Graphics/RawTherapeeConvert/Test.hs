@@ -72,6 +72,9 @@ withEmptyTmpDir f = do
         randomString :: IO String
         randomString = show <$> (randomIO :: IO Int)
 
+testLogger :: LoggerName
+testLogger = LoggerName "testLogger"
+
 type Parent = FilePath
 createFile :: Parent -> FilePath -> IO FilePath
 createFile p fp = let resultPath = p </> fp
@@ -80,7 +83,7 @@ createFile p fp = let resultPath = p </> fp
 cr2PathsShouldBeAStreamEmittingCr2FilesOnly :: Assertion
 cr2PathsShouldBeAStreamEmittingCr2FilesOnly = withEmptyTmpDir $ \dir -> do
   sequenceA_ $ createFile dir <$> ["file1.CR2", "file2.CR2", "any.txt"]
-  let toTest = cr2Paths dir =$= CC.map (const (1 :: Sum Int)) =$= CC.fold
+  let toTest = cr2Paths testLogger dir =$= CC.map (const (1 :: Sum Int)) =$= CC.fold
   result <- runResourceT . runConduit $ toTest
   assertEqual "" 2 result
 
