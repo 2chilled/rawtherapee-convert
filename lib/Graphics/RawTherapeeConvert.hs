@@ -12,6 +12,7 @@ import Control.Exception (IOException)
 import Data.String.Utils (startswith)
 import System.Log.Logger (updateGlobalLogger, setLevel, Priority (DEBUG), addHandler, infoM)
 import System.Log.Handler.Syslog (openlog, Option (PID), Facility (USER))
+import System.FilePath (takeExtension)
 
 newtype RootSourceDir = RootSourceDir FilePath
 
@@ -34,6 +35,9 @@ filePaths = errorHandled . (CC.sourceDirectoryDeep False)
               catched = handleC (\e -> yield (Left (e :: IOException)))
           in catched (conduit =$= eitherConduit) =$= logConduit =$= maybeConduit =$= filteredBySome
 
+cr2Paths :: (MonadResource m, MonadBaseControl IO m) => FilePath -> Source m FilePath
+cr2Paths fp = filePaths fp =$= CC.filter ((== ".CR2") . takeExtension)
+
 tmpPaths :: Source (ResourceT IO) FilePath
 tmpPaths = filePaths "/tmp"
 
@@ -51,8 +55,8 @@ getTargetDirectoryPath (RootSourceDir rootSourceDir)
                        (RootTargetDir rootTargetDir)
                        sourceFilePath | sourceFilePath `startswith` rootSourceDir =
                                                     Right . unpack $ replaceOne (pack rootSourceDir)
-                                                                        (pack rootTargetDir)
-                                                                        (pack sourceFilePath)
+                                                                                (pack rootTargetDir)
+                                                                                (pack sourceFilePath)
                                       | otherwise = Left SourceFilePathIsNotUnderRootSourceDir
 
   where replaceOne :: Text -> Text -> Text -> Text
