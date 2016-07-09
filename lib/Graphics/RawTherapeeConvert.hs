@@ -10,6 +10,8 @@ import qualified Data.Text as T
 import Data.Text (unpack, pack, Text, breakOn)
 import Control.Exception (IOException)
 import Data.String.Utils (startswith)
+import System.Log.Logger (updateGlobalLogger, setLevel, Priority (DEBUG), addHandler, infoM)
+import System.Log.Handler.Syslog (openlog, Option (PID), Facility (USER))
 
 newtype RootSourceDir = RootSourceDir FilePath
 
@@ -26,7 +28,7 @@ filePaths = errorHandled . (CC.sourceDirectoryDeep False)
               maybeConduit = CC.map (const Nothing `either` Just)
               filteredBySome = CC.concatMap id
               logConduit = let msg exception = "Could not access file: " <> show exception
-                               printMsg = liftBase . putStrLn . msg
+                               printMsg = liftBase . infoM loggerName . msg
                                doNothing = const . liftBase . return $ ()
                            in CC.iterM $ printMsg `either` doNothing
               catched = handleC (\e -> yield (Left (e :: IOException)))
@@ -58,4 +60,15 @@ getTargetDirectoryPath (RootSourceDir rootSourceDir)
           | T.null back = text    -- pattern doesn't occur
           | otherwise = T.concat [front, substitution, T.drop (T.length pattern) back]
             where (front, back) = breakOn pattern text
+
+loggerName :: String
+loggerName = "Graphics.RawTherapeeConvert"
+
+programName :: String
+programName = "rawtherapee-convert"
+
+configureLogger :: IO ()
+configureLogger = do
+  sysLogHandler <- openlog programName [PID] USER DEBUG
+  updateGlobalLogger loggerName (setLevel DEBUG . addHandler sysLogHandler )
 
