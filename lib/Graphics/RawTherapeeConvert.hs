@@ -1,11 +1,11 @@
 {-# LANGUAGE FlexibleContexts #-}
 module Graphics.RawTherapeeConvert where
 
-import Control.Monad.Trans.Resource (MonadResource, runResourceT, MonadBaseControl, ResourceT)
+import Control.Monad.Trans.Resource (MonadResource, MonadBaseControl)
 import Control.Monad.Base (liftBase)
 import Data.Monoid ((<>))
 import qualified Data.Conduit.Combinators as CC
-import Data.Conduit ((=$=), ($$), Source, handleC, yield)
+import Data.Conduit ((=$=), Source, handleC, yield)
 import qualified Data.Text as T
 import Data.Text (unpack, pack, Text, breakOn)
 import Control.Exception (IOException)
@@ -37,12 +37,6 @@ filePaths = errorHandled . (CC.sourceDirectoryDeep False)
 
 cr2Paths :: (MonadResource m, MonadBaseControl IO m) => FilePath -> Source m FilePath
 cr2Paths fp = filePaths fp =$= CC.filter ((== ".CR2") . takeExtension)
-
-tmpPaths :: Source (ResourceT IO) FilePath
-tmpPaths = filePaths "/tmp"
-
-printTmpPaths :: IO ()
-printTmpPaths = runResourceT $ tmpPaths $$ CC.print
 
 data GetTargetDirectoryException = SourceFilePathIsNotUnderRootSourceDir 
   deriving (Show, Eq)
