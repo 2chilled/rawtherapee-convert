@@ -1,5 +1,22 @@
 {-# LANGUAGE FlexibleContexts #-}
-module Graphics.RawTherapeeConvert where
+module Graphics.RawTherapeeConvert (
+  filePaths,
+  RootSourceDir(..),
+  RootTargetDir(..),
+  GetTargetDirectoryException(..),
+  SourceFilePath,
+  TargetDirPath,
+  LoggerName(..),
+  cr2Paths,
+  getTargetDirectoryPath,
+  CR2FilePath,
+  PP3FilePath,
+  findPp3,
+  RTExec,
+  TargetFilePath,
+  execRT,
+  execRTWithoutPp3
+) where
 
 import Control.Monad.Trans.Resource (MonadResource, MonadBaseControl)
 import Control.Monad.Base (liftBase)
@@ -8,11 +25,13 @@ import qualified Data.Conduit.Combinators as CC
 import Data.Conduit ((=$=), Source, handleC, yield)
 import qualified Data.Text as T
 import Data.Text (unpack, pack, Text, breakOn)
-import Control.Exception (IOException)
+import Data.Maybe (fromMaybe)
+import Control.Exception (IOException, try)
 import Data.String.Utils (startswith)
 import System.Log.Logger (infoM)
 import System.FilePath (takeExtension, (<.>))
 import System.Directory (doesFileExist)
+import System.Process (callProcess)
 
 newtype RootSourceDir = RootSourceDir FilePath
 
@@ -40,7 +59,7 @@ filePaths (LoggerName loggerName) = errorHandled . (CC.sourceDirectoryDeep False
 cr2Paths :: (MonadResource m, MonadBaseControl IO m) => LoggerName -> FilePath -> Source m FilePath
 cr2Paths ln fp = filePaths ln fp =$= CC.filter ((== ".CR2") . takeExtension)
 
-data GetTargetDirectoryException = SourceFilePathIsNotUnderRootSourceDir 
+data GetTargetDirectoryException = SourceFilePathIsNotUnderRootSourceDir
   deriving (Show, Eq)
 
 getTargetDirectoryPath :: RootSourceDir
@@ -69,3 +88,51 @@ findPp3 cr2 = let pp3 = cr2 <.> "pp3"
                   toMaybe p = if p then Just pp3 else Nothing
               in toMaybe <$> doesFileExist pp3
 
+type RTExec = FilePath
+type TargetFilePath = FilePath
+
+execRT :: RTExec
+       -> CR2FilePath
+       -> PP3FilePath
+       -> TargetFilePath
+       -> IO (Either IOException ())
+execRT executable cr2Path pp3Path targetFilePath =
+  let params = toRtCliOptionList $ RtCliOptions {
+      rcoCr2FilePath = cr2Path
+    , rcoTargetFilePath = targetFilePath
+    , rcoPp3FilePath = Just pp3Path
+  }
+  in callProcess' executable params
+
+execRTWithoutPp3 :: RTExec
+                 -> CR2FilePath
+                 -> TargetFilePath
+                 -> IO (Either IOException ())
+execRTWithoutPp3 executable cr2Path targetFilePath =
+  let params = toRtCliOptionList $ RtCliOptions {
+      rcoCr2FilePath = cr2Path
+    , rcoTargetFilePath = targetFilePath
+    , rcoPp3FilePath = Nothing
+  }
+  in callProcess' executable params
+
+-- private
+
+data RtCliOptions = RtCliOptions {
+  rcoCr2FilePath :: String
+, rcoTargetFilePath :: String
+, rcoPp3FilePath :: Maybe String
+}
+
+toRtCliOptionList :: RtCliOptions -> [String]
+toRtCliOptionList opts = [
+      "-O", rcoTargetFilePath opts
+    , "-Y"
+  ]
+  <> ["-d"] `fromMaybe` (("-p":) . pure <$> rcoPp3FilePath opts)
+  <> ["-c", rcoCr2FilePath opts]
+
+callProcess' :: String -> [String] -> IO (Either IOException ())
+callProcess' executable args = try $ callProcess executable args
+
+  --rawtherapee -O converted/ -s -d -p /home/chief/.config/RawTherapee/profiles/my_default.pp3 -c IMG_0105.CR2

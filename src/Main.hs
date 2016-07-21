@@ -6,7 +6,6 @@ import System.Log.Handler.Syslog (openlog, Option (PID), Facility (USER))
 main :: IO ()
 main = validateInputs >>= (logInputException `either` convert)
 
-  --rawtherapee -O converted/ -s -d -p /home/chief/.config/RawTherapee/profiles/my_default.pp3 -c IMG_0105.CR2
 
 convert :: UserSettings -> IO ()
 convert = undefined
