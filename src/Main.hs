@@ -6,7 +6,6 @@ import System.Log.Handler.Syslog (openlog, Option (PID), Facility (USER))
 main :: IO ()
 main = validateInputs >>= (logInputException `either` convert)
 
-
 convert :: UserSettings -> IO ()
 convert = undefined
 
