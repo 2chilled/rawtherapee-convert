@@ -19,6 +19,10 @@ executable rawtherapee-convert
   build-depends:       base >= 4.7 && < 5
                      , rawtherapee-convert
                      , hslogger >= 1.0 && < 2.0
+                     , conduit >= 1.0 && < 2.0
+                     , conduit-combinators >= 1.0 && < 2.0
+                     , resourcet >= 1.0 && < 2.0
+                     , transformers >= 0.4 && < 1.0
   ghc-options:         -Wall
 
 

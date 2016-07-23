@@ -15,7 +15,9 @@ module Graphics.RawTherapeeConvert (
   RTExec,
   TargetFilePath,
   execRT,
-  execRTWithoutPp3
+  execRTWithoutPp3,
+  isConversionNecessary,
+  determinePp3FilePath
 ) where
 
 import Control.Monad.Trans.Resource (MonadResource, MonadBaseControl)
@@ -33,15 +35,15 @@ import System.FilePath (takeExtension, (<.>))
 import System.Directory (doesFileExist)
 import System.Process (callProcess)
 
-newtype RootSourceDir = RootSourceDir FilePath
+newtype RootSourceDir = RootSourceDir FilePath deriving (Show, Eq)
 
-newtype RootTargetDir = RootTargetDir FilePath
+newtype RootTargetDir = RootTargetDir FilePath deriving (Show, Eq)
 
 type SourceFilePath = FilePath
 
 type TargetDirPath = FilePath
 
-newtype LoggerName = LoggerName String
+newtype LoggerName = LoggerName String deriving (Show, Eq)
 
 filePaths :: (MonadResource m, MonadBaseControl IO m) => LoggerName -> FilePath -> Source m FilePath
 filePaths (LoggerName loggerName) = errorHandled . (CC.sourceDirectoryDeep False)
@@ -79,6 +81,15 @@ getTargetDirectoryPath (RootSourceDir rootSourceDir)
           | T.null back = text    -- pattern doesn't occur
           | otherwise = T.concat [front, substitution, T.drop (T.length pattern) back]
             where (front, back) = breakOn pattern text
+
+targetFilePathAlreadyExists :: SourceFilePath -> TargetFilePath -> IO Bool
+targetFilePathAlreadyExists = undefined
+
+isConversionNecessary :: SourceFilePath -> TargetFilePath -> Maybe PP3FilePath -> IO Bool
+isConversionNecessary = undefined
+
+determinePp3FilePath :: SourceFilePath -> IO (Maybe PP3FilePath)
+determinePp3FilePath = undefined
 
 type CR2FilePath = FilePath
 type PP3FilePath = FilePath
