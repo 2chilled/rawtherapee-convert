@@ -13,7 +13,7 @@ import Control.Applicative ((<|>))
 import qualified Data.Conduit.Combinators as CC
 import System.Console.GetOpt (OptDescr(..), ArgDescr(..), getOpt, ArgOrder(..), usageInfo)
 import System.Environment (getArgs)
-import System.Directory (doesDirectoryExist)
+import System.Directory (doesDirectoryExist, doesFileExist, getPermissions, executable)
 import Data.String.Utils (strip)
 
 main :: IO ()
@@ -88,11 +88,24 @@ optDescriptions = [
   , Option ['t'] ["targetDir"]
     (ReqArg (\targetDir us -> (\fp -> us { usTargetDir = fp }) <$> directoryValidation targetDir ) "/home/user/pics_converted")
     "Target dir where converted pictures will be saved to"
+
+  , Option ['e'] ["executable"]
+    (ReqArg (\executablePath us -> (\e -> us { usRtExec = e }) <$> executableValidation executablePath ) "/home/user/pics_converted")
+    "Target dir where converted pictures will be saved to"
   ]
   where directoryValidation :: FilePath -> InputExceptionEither FilePath
         directoryValidation fp = do
           doesExist <- liftIO $ doesDirectoryExist fp
           if doesExist then pure (strip fp) else left . InputExceptionSemantic $ em fp <> " is not a directory"
+
+        executableValidation :: FilePath -> InputExceptionEither FilePath
+        executableValidation fp = do
+          doesExist <- liftIO $ doesFileExist fp
+          isExecutable <- liftIO $ if doesExist then executable <$> getPermissions fp else pure False
+          case (doesExist, isExecutable)
+            of (False, _) -> left . InputExceptionSemantic $ em fp <> " is not a file"
+               (_, False) -> left . InputExceptionSemantic $ em fp <> " is not executable"
+               _          -> pure (strip fp)
 
 usageInfo' :: String
 usageInfo' = usageInfo "Usage: rawtherapee-convert [OPTION...]" optDescriptions
