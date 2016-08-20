@@ -67,7 +67,7 @@ filePaths (LoggerName loggerName) = errorHandled . (CC.sourceDirectoryDeep False
 cr2Paths :: (MonadResource m, MonadBaseControl IO m) => LoggerName -> FilePath -> Source m FilePath
 cr2Paths ln fp = filePaths ln fp =$= CC.filter ((== ".CR2") . takeExtension)
 
-data GetTargetDirectoryException = SourceFilePathIsNotUnderRootSourceDir
+data GetTargetDirectoryException = SourceFilePathIsNotUnderRootSourceDir RootSourceDir SourceFilePath
   deriving (Show, Eq)
 
 getTargetDirectoryPath :: RootSourceDir
@@ -76,11 +76,11 @@ getTargetDirectoryPath :: RootSourceDir
                        -> Either GetTargetDirectoryException TargetDirPath
 getTargetDirectoryPath (RootSourceDir rootSourceDir)
                        (RootTargetDir rootTargetDir)
-                       sourceFilePath | sourceFilePath `startswith` rootSourceDir =
+                       sourceFilePath | rootSourceDir `startswith` sourceFilePath =
                                                     Right . unpack $ replaceOne (pack rootSourceDir)
                                                                                 (pack rootTargetDir)
                                                                                 (pack sourceFilePath)
-                                      | otherwise = Left SourceFilePathIsNotUnderRootSourceDir
+                                      | otherwise = Left $ SourceFilePathIsNotUnderRootSourceDir (RootSourceDir rootSourceDir) sourceFilePath
 
   where replaceOne :: Text -> Text -> Text -> Text
         replaceOne pattern substitution text

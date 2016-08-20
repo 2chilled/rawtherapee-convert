@@ -1,11 +1,14 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module Graphics.RawTherapeeConvert.Test where
 import Test.Framework (Test, testGroup)
 import Test.Framework.Providers.HUnit (testCase)
 import Test.Framework.Providers.QuickCheck2 (testProperty)
-import Test.QuickCheck (Property, Arbitrary, arbitrary, property, ioProperty)
+import Test.QuickCheck (Property, Arbitrary, arbitrary, property, ioProperty, (==>), listOf, elements)
 import Test.HUnit (Assertion, assertEqual, assertBool)
 import Data.Monoid ((<>), Sum)
-import System.FilePath (pathSeparator, takeDirectory, (</>))
+import Data.Text (strip, Text, pack, unpack)
+import System.FilePath (pathSeparator, takeDirectory, (</>), takeFileName)
 import Graphics.RawTherapeeConvert
 import Control.Exception (catch, SomeException, throwIO)
 import System.Random (randomIO)
@@ -20,8 +23,8 @@ import Data.Maybe (isJust, isNothing)
 tests :: [Test]
 tests = [
   testGroup "Graphics.RawTherapeeConvert" [
-    testProperty "getTargetDirectoryPath should return a left if sourceFilePath is not a subpath of root source dir"
-      getTargetDirectoryPathShouldReturnALeftIfSourceFilePathIsNotASubpathOfRootSourceDir
+    testProperty "getTargetDirectoryPath should return a Left if sourceFilePath is not a subpath of root source dir and a Right otherwise"
+      getTargetDirectoryShouldReturnTheCorrectEither
   , testCase "cr2Paths should be a stream emitting cr2 files only"
       cr2PathsShouldBeAStreamEmittingCr2FilesOnly
   , testCase "findPp3 should return the file path to the pp3 if it exists"
@@ -42,16 +45,31 @@ newtype TestFilePath = TestFilePath FilePath deriving (Show, Eq)
 instance Arbitrary TestFilePath where
   arbitrary = TestFilePath <$> (buildPath <$> arbitrary <*> arbitrary)
     where buildPath p1 p2 = let ps = pathSeparator : ""
-                            in ps <> "test" <> ps <> p1 <> ps <> p2
+                                append x = x <> "bla"
+                            in ps <> "test" <> append ps <> append p1 <> append ps <> append p2
 
-getTargetDirectoryPathShouldReturnALeftIfSourceFilePathIsNotASubpathOfRootSourceDir ::
-  TestFilePath -> String -> Property
-getTargetDirectoryPathShouldReturnALeftIfSourceFilePathIsNotASubpathOfRootSourceDir
-  (TestFilePath fp) anyString = let fpUp = takeDirectory fp
-                                    result = getTargetDirectoryPath (RootSourceDir fpUp)
-                                                                    (RootTargetDir anyString)
-                                                                    fp
-                                in property $ result == Left SourceFilePathIsNotUnderRootSourceDir
+newtype MyText = MyText Text deriving (Show, Eq)
+instance Arbitrary MyText where
+  arbitrary =
+    let stringGen = listOf $ elements ['a'..'z']
+    in MyText . pack <$> stringGen
+
+getTargetDirectoryShouldReturnTheCorrectEither ::
+  TestFilePath -> MyText -> Property
+getTargetDirectoryShouldReturnTheCorrectEither
+  (TestFilePath fp) (MyText anyText) = strip anyText /= "" ==>
+    let fpUp = takeDirectory fp
+        anyString = unpack anyText
+        fpDifferent = fpUp <> "bla"
+        dirPath rootSourceDir = getTargetDirectoryPath (RootSourceDir rootSourceDir)
+                                                       (RootTargetDir anyString)
+                                                       fp
+        leftResult = dirPath fpDifferent
+        leftResultExpected = Left (SourceFilePathIsNotUnderRootSourceDir (RootSourceDir fpDifferent) fp)
+        rightResult = dirPath fpUp
+        rightResultExpected = Right (anyString </> takeFileName fp) :: Either GetTargetDirectoryException String
+    in property $ leftResult == leftResultExpected
+               && rightResult == rightResultExpected
 
 withEmptyTmpDir :: (FilePath -> IO x) -> IO x
 withEmptyTmpDir f = do
