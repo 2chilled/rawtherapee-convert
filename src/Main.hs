@@ -81,12 +81,16 @@ validateInputs = getArgs >>= (runEitherT . validateHelper)
 
 optDescriptions :: [OptDescr (UserSettings -> InputExceptionEither UserSettings)]
 optDescriptions = [
-  Option ['b'] ["baseDir"]
-  (ReqArg (\sourceDir us -> (\fp -> us { usSourceDir = fp }) <$> sourceDirValidation sourceDir ) "/home/user/pics")
-  "Base dir to look for raw files"
+    Option ['b'] ["baseDir"]
+    (ReqArg (\sourceDir us -> (\fp -> us { usSourceDir = fp }) <$> directoryValidation sourceDir ) "/home/user/pics")
+    "Base dir to look for raw files"
+
+  , Option ['t'] ["targetDir"]
+    (ReqArg (\targetDir us -> (\fp -> us { usTargetDir = fp }) <$> directoryValidation targetDir ) "/home/user/pics_converted")
+    "Target dir where converted pictures will be saved to"
   ]
-  where sourceDirValidation :: FilePath -> InputExceptionEither FilePath
-        sourceDirValidation fp = do
+  where directoryValidation :: FilePath -> InputExceptionEither FilePath
+        directoryValidation fp = do
           doesExist <- liftIO $ doesDirectoryExist fp
           if doesExist then pure (strip fp) else left . InputExceptionSemantic $ em fp <> " is not a directory"
 
@@ -105,7 +109,7 @@ data UserSettings = UserSettings {
 , usDefaultPp3 :: Maybe PP3FilePath
   -- |Full path to the rawtherapee executable
 , usRtExec :: RTExec
-}
+} deriving (Show, Eq)
 
 emptyUserSettings :: UserSettings
 emptyUserSettings = UserSettings {
