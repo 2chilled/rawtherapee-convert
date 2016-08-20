@@ -7,8 +7,14 @@ import Data.Conduit (Source, (=$=), runConduit)
 import Data.Monoid ((<>))
 import Control.Monad.Trans.Resource (ResourceT, runResourceT)
 import Control.Monad.Trans.Class (lift)
+import Control.Monad.Trans.Either (EitherT(..), runEitherT, left)
+import Control.Monad.IO.Class (liftIO)
 import Control.Applicative ((<|>))
 import qualified Data.Conduit.Combinators as CC
+import System.Console.GetOpt (OptDescr(..), ArgDescr(..), getOpt, ArgOrder(..), usageInfo)
+import System.Environment (getArgs)
+import System.Directory (doesDirectoryExist)
+import Data.String.Utils (strip)
 
 main :: IO ()
 main = validateInputs >>= (logInputException `either` convert)
@@ -53,13 +59,42 @@ convert us =
             resultEither <- (execRTWithoutPp3' `maybe` execRT') maybePp3FilePath
             (resultErrorLog `either` const resultSuccessLog) resultEither
 
+type InputExceptionEither x = EitherT InputException IO x
+
 logInputException :: InputException -> IO ()
-logInputException = undefined
+logInputException e = let msg s = header <> s <> "\n" <> usageInfo'
+                      in case e of (InputExceptionSyntax s)   -> putStrLn $ msg s
+                                   (InputExceptionSemantic s) -> putStrLn $ msg s
+  where header :: String
+        header = "Errors:\n"
 
 validateInputs :: IO (Either InputException UserSettings)
-validateInputs = undefined
+validateInputs = getArgs >>= (runEitherT . validateHelper)
+  where validateHelper :: [String] -> InputExceptionEither UserSettings
+        validateHelper args = case getOpt RequireOrder optDescriptions args of
+          ([], _, []) -> left . InputExceptionSyntax $ ""
+          (parsedOpts, [], []) -> foldToEither parsedOpts
+          (_, _, errors) -> left . InputExceptionSyntax . unlines $ errors
 
-data InputException
+        foldToEither :: [UserSettings -> InputExceptionEither UserSettings] -> InputExceptionEither UserSettings
+        foldToEither = foldl (>>=) (pure emptyUserSettings)
+
+optDescriptions :: [OptDescr (UserSettings -> InputExceptionEither UserSettings)]
+optDescriptions = [
+  Option ['b'] ["baseDir"]
+  (ReqArg (\sourceDir us -> (\fp -> us { usSourceDir = fp }) <$> sourceDirValidation sourceDir ) "/home/user/pics")
+  "Base dir to look for raw files"
+  ]
+  where sourceDirValidation :: FilePath -> InputExceptionEither FilePath
+        sourceDirValidation fp = do
+          doesExist <- liftIO $ doesDirectoryExist fp
+          if doesExist then pure (strip fp) else left . InputExceptionSemantic $ em fp <> " is not a directory"
+
+usageInfo' :: String
+usageInfo' = usageInfo "Usage: rawtherapee-convert [OPTION...]" optDescriptions
+
+data InputException = InputExceptionSyntax String
+                    | InputExceptionSemantic String
 
 data UserSettings = UserSettings {
   -- |Base dir we'll look for cr2 files
@@ -70,6 +105,14 @@ data UserSettings = UserSettings {
 , usDefaultPp3 :: Maybe PP3FilePath
   -- |Full path to the rawtherapee executable
 , usRtExec :: RTExec
+}
+
+emptyUserSettings :: UserSettings
+emptyUserSettings = UserSettings {
+  usSourceDir = ""
+, usTargetDir = ""
+, usDefaultPp3 = Nothing
+, usRtExec = ""
 }
 
 --Logging

@@ -17,7 +17,8 @@ module Graphics.RawTherapeeConvert (
   execRT,
   execRTWithoutPp3,
   isConversionNecessary,
-  determinePp3FilePath
+  determinePp3FilePath,
+  em
 ) where
 
 import Control.Monad.Trans.Resource (MonadResource, MonadBaseControl)
@@ -147,8 +148,8 @@ isConversionNecessary sourceFilePath targetDirPath maybeDefaultPp3FilePath =
         logTargetPp3FilePathDoesNotExistMsg targetPp3FilePath =
           putStrLn $ "Target pp3 file path " <> em targetPp3FilePath <> " does not exist for source file " <> em sourceFilePath
 
-        em :: String -> String
-        em s = "'" <> s <> "'"
+em :: String -> String
+em s = "'" <> s <> "'"
 
 determinePp3FilePath :: SourceFilePath -> IO (Maybe PP3FilePath)
 determinePp3FilePath sourceFilePath =
