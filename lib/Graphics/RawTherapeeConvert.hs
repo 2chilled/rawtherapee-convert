@@ -1,4 +1,4 @@
-{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleContexts, OverloadedStrings #-}
 module Graphics.RawTherapeeConvert (
   filePaths,
   RootSourceDir(..),
@@ -22,7 +22,7 @@ module Graphics.RawTherapeeConvert (
 ) where
 
 import Control.Monad.Trans.Resource (MonadResource, MonadBaseControl)
-import Control.Monad.Trans.Either (EitherT(..), runEitherT)
+import Control.Monad.Trans.Either (EitherT(..), runEitherT, bimapEitherT)
 import Control.Monad.Base (liftBase)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad (when)
@@ -39,7 +39,10 @@ import System.Log.Logger (infoM)
 import System.FilePath (takeExtension, (<.>), (</>), takeFileName, dropExtension, takeDirectory)
 import System.Directory (doesFileExist)
 import System.Process (callProcess)
-import qualified Data.ByteString.Lazy as B
+{-import qualified Data.ByteString.Lazy as B-}
+import qualified Data.Text.Lazy as LT
+import qualified Data.Text.Lazy.IO as LTIO
+import Data.Foldable (find)
 
 newtype RootSourceDir = RootSourceDir FilePath deriving (Show, Eq)
 
@@ -93,7 +96,12 @@ isConversionNecessary sourceFilePath targetDirPath maybeDefaultPp3FilePath =
   let targetFilePathExists = let targetFilePath = buildTargetFilePath
                              in  assertFileExists targetFilePath (logTargetFilePathDoesNotExistMsg targetFilePath)
       targetPp3FilePathExists = let targetPp3FilePath = buildTargetPp3FilePath
-                                in  assertFileExists targetPp3FilePath (logPp3TargetFilePathDoesNotExistMsg targetPp3FilePath)
+                                    alternativeTargetPp3FilePath = buildAlternativeTargetPp3FilePath
+                                    assertFileExists' p = assertFileExists p (logTargetPp3FilePathDoesNotExistMsg p)
+                                    leftMap f e = bimapEitherT f id e
+                                    result' = leftMap All (assertFileExists' targetPp3FilePath)
+                                          <|> leftMap All (assertFileExists' alternativeTargetPp3FilePath)
+                                in leftMap getAll result'
       targetPp3FileEqualsGivenPp3File maybeSourcePp3FilePath =
         getAll . foldMap All <$> equalsTargetPp3FilePath `traverse` (maybeSourcePp3FilePath <|> maybeDefaultPp3FilePath)
       result = do
@@ -109,6 +117,9 @@ isConversionNecessary sourceFilePath targetDirPath maybeDefaultPp3FilePath =
         buildTargetPp3FilePath :: TargetFilePath
         buildTargetPp3FilePath = toPp3FilePath buildTargetFilePath
 
+        buildAlternativeTargetPp3FilePath :: TargetFilePath
+        buildAlternativeTargetPp3FilePath = toAlternativePp3FilePath buildTargetFilePath
+
         sourcePp3FilePath :: IO (Maybe PP3FilePath)
         sourcePp3FilePath = let p = toPp3FilePath sourceFilePath
                             in (\doesExist -> if doesExist then Just p else Nothing) <$> doesFileExist p
@@ -121,31 +132,41 @@ isConversionNecessary sourceFilePath targetDirPath maybeDefaultPp3FilePath =
           where joinLeftSide :: IO (Either (IO a) b) -> IO (Either a b)
                 joinLeftSide io = io >>= ((Left <$>) `either` (pure . Right))
 
-
         equalsTargetPp3FilePath :: PP3FilePath -> IO Bool
         equalsTargetPp3FilePath sourcePp3 =
           let targetPp3 = buildTargetPp3FilePath
+              alternativeTargetPp3 = buildAlternativeTargetPp3FilePath
+              targetPp3s = [targetPp3, alternativeTargetPp3]
               result = do
-                targetPp3Exists <- liftIO $ doesFileExist targetPp3
+                targetPp3ExistsResult <- liftIO $ doesFileExist `traverse` targetPp3s
+                let (targetPp3Exists, targetPp3') = let existMaybe = ((== True) . fst) `find` (targetPp3ExistsResult `zip` targetPp3s)
+                                                    in (False, targetPp3) `fromMaybe` existMaybe
                 _ <- if targetPp3Exists
                      then EitherT . pure $ Right ()
-                     else EitherT $ Left () <$ logTargetPp3FilePathDoesNotExistMsg targetPp3
-                result' <- liftIO $ contentEquals sourcePp3 targetPp3
-                _ <- when (not result') . liftIO . putStrLn $ ("source pp3 file " <> em sourcePp3 <> " does not equal " <> em targetPp3)
+                     else EitherT $ Left () <$ logTargetPp3FilePathDoesNotExistMsg targetPp3'
+                result' <- liftIO $ contentEquals sourcePp3 targetPp3'
+                _ <- when (not result') . liftIO . putStrLn $ ("source pp3 file " <> em sourcePp3 <> " does not equal " <> em targetPp3')
                 pure result'
           in (const False `either` id) <$> runEitherT result
           where contentEquals :: FilePath -> FilePath -> IO Bool
-                contentEquals fp1 fp2 = do
-                  [fp1B, fp2B] <- B.readFile `traverse` [fp1, fp2]
-                  pure $ fp1B == fp2B
+                contentEquals fp1 fp2 =
+                  let filtered t = let containsAppVersion t' = case LT.breakOn "AppVersion" t' of (_, "") -> True
+                                                                                                  _       -> False
+                                   in containsAppVersion `filter` LT.lines t
+                  in do
+                    [fp1T, fp2T] <- LTIO.readFile `traverse` [fp1, fp2]
+                    pure $ filtered fp1T == filtered fp2T
+                -- this is enough when build problem with "AppVersion" key has been fixed
+                {-
+                 -contentEquals :: FilePath -> FilePath -> IO Bool
+                 -contentEquals fp1 fp2 = do
+                 -  [fp1B, fp2B] <- B.readFile `traverse` [fp1, fp2]
+                 -  pure $ fp1B == fp2B
+                 -}
 
         logTargetFilePathDoesNotExistMsg :: TargetFilePath -> IO ()
         logTargetFilePathDoesNotExistMsg targetFilePath =
           putStrLn $ "Target file path " <> em targetFilePath <> " does not exist for source file " <> em sourceFilePath
-
-        logPp3TargetFilePathDoesNotExistMsg :: TargetFilePath -> IO ()
-        logPp3TargetFilePathDoesNotExistMsg fp =
-          putStrLn $ "Target pp3 file path " <> em fp <> " does not exist for source file " <> em sourceFilePath
 
         logTargetPp3FilePathDoesNotExistMsg :: PP3FilePath -> IO ()
         logTargetPp3FilePathDoesNotExistMsg targetPp3FilePath =
@@ -163,6 +184,9 @@ determinePp3FilePath sourceFilePath =
 
 toPp3FilePath :: FilePath -> PP3FilePath
 toPp3FilePath fp = fp <.> "pp3"
+
+toAlternativePp3FilePath :: FilePath -> PP3FilePath
+toAlternativePp3FilePath fp = fp <.> "out" <.> "pp3"
 
 type CR2FilePath = FilePath
 type PP3FilePath = FilePath
@@ -187,6 +211,7 @@ execRT executable cr2Path pp3Path targetFilePath =
     , rcoPp3FilePath = Just pp3Path
   }
   in callProcess' executable params
+  -- TODO write the resulting PP3 back?
 
 execRTWithoutPp3 :: RTExec
                  -> CR2FilePath
