@@ -202,8 +202,8 @@ isConversionNecessaryShouldBehaveCorrectlyForAllCases (SourceFilePathShouldConta
     (sourceDir, targetDir) <- createSourceAndTarget dir
     sourceFile <- let f = sourceDir </> "test.CR2" in f <$ writeFile f ""
     _ <- when targetFilePathShouldExist $ writeFile (targetDir </> "test.jpg") ""
-    _ <- when sourceFilePathShouldContainPp3 $ writeFile (sourceDir </> "test.pp3") "a"
-    _ <- when targetFilePathShouldContainPp3 $ writeFile (targetDir </> "test.pp3") targetPp3Content
+    _ <- when sourceFilePathShouldContainPp3 $ writeFile (sourceDir </> "test.jpg.pp3") "a"
+    _ <- when targetFilePathShouldContainPp3 $ writeFile (targetDir </> "test.jpg.pp3") targetPp3Content
     defaultPp3 <- if defaultPp3ShouldBeGiven then let f = sourceDir </> "default.pp3" in Just f <$ writeFile f "a" else pure Nothing
     result <- isConversionNecessary sourceFile targetDir defaultPp3
     pure $ result == not (targetFilePathShouldExist && targetFilePathShouldContainPp3 && (sourcePp3ShouldEqualTargetPp3 || (not sourceFilePathShouldContainPp3 && not defaultPp3ShouldBeGiven)))

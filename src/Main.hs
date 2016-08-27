@@ -2,6 +2,8 @@ module Main where
 
 import System.Log.Logger (updateGlobalLogger, setLevel, Priority (DEBUG), addHandler, errorM, infoM)
 import System.Log.Handler.Syslog (openlog, Option (PID), Facility (USER))
+import System.Log.Handler.Simple (streamHandler)
+import System.IO (stdout)
 import Graphics.RawTherapeeConvert
 import Data.Conduit (Source, (=$=), runConduit)
 import Data.Monoid ((<>))
@@ -13,11 +15,14 @@ import Control.Applicative ((<|>))
 import qualified Data.Conduit.Combinators as CC
 import System.Console.GetOpt (OptDescr(..), ArgDescr(..), getOpt, ArgOrder(..), usageInfo)
 import System.Environment (getArgs)
-import System.Directory (doesDirectoryExist, doesFileExist, getPermissions, executable)
+import System.Directory (doesDirectoryExist, doesFileExist, getPermissions, executable, createDirectoryIfMissing)
+import System.FilePath ((</>), takeFileName)
 import Data.String.Utils (strip)
 
 main :: IO ()
-main = validateInputs >>= (logInputException `either` convert)
+main = do
+  configureLogger
+  validateInputs >>= (logInputException `either` convert)
 
 convert :: UserSettings -> IO ()
 convert us =
@@ -42,6 +47,7 @@ convert us =
         convertIt sourceFilePath maybePp3FilePath targetDirPath = do
           conversionNecessary <- isConversionNecessary sourceFilePath targetDirPath maybePp3FilePath
           if conversionNecessary then do
+            createDirectoryIfMissing True targetDirPath
             existingPp3 <- determinePp3FilePath sourceFilePath
             let pp3FilePathToUse = existingPp3 <|> maybePp3FilePath
             convertItFinally (usRtExec us) sourceFilePath pp3FilePathToUse targetDirPath
@@ -51,9 +57,10 @@ convert us =
         convertItFinally :: RTExec -> SourceFilePath -> Maybe PP3FilePath -> TargetDirPath -> IO ()
         convertItFinally rtExec sourceFilePath maybePp3FilePath targetDirPath =
           let resultErrorLog exception = errorM loggerName $ "Failed to convert file '" <> sourceFilePath <> "': " <> show exception
-              resultSuccessLog = infoM loggerName $ "Successfully converted file '" <> sourceFilePath <> "' to '" <> targetDirPath <> "'"
-              execRTWithoutPp3' = execRTWithoutPp3 rtExec sourceFilePath targetDirPath
-              execRT' pp3FilePath = execRT rtExec sourceFilePath pp3FilePath targetDirPath
+              resultSuccessLog = infoM loggerName $ "Successfully converted file '" <> sourceFilePath <> "' to '" <> targetFilePath <> "'"
+              targetFilePath = targetDirPath </> takeFileName sourceFilePath
+              execRTWithoutPp3' = execRTWithoutPp3 rtExec sourceFilePath targetFilePath
+              execRT' pp3FilePath = execRT rtExec sourceFilePath pp3FilePath targetFilePath
           in do
             infoM loggerName $ "Starting conversion of file '" <> sourceFilePath <> "'"
             resultEither <- (execRTWithoutPp3' `maybe` execRT') maybePp3FilePath
@@ -143,4 +150,5 @@ programName = "rawtherapee-convert"
 configureLogger :: IO ()
 configureLogger = do
   sysLogHandler <- openlog programName [PID] USER DEBUG
-  updateGlobalLogger loggerName (setLevel DEBUG . addHandler sysLogHandler)
+  stdoutHandler <- streamHandler stdout DEBUG
+  updateGlobalLogger loggerName (setLevel DEBUG . addHandler sysLogHandler . addHandler stdoutHandler)

@@ -36,7 +36,7 @@ import Data.Maybe (fromMaybe)
 import Control.Exception (IOException, try)
 import Data.String.Utils (startswith)
 import System.Log.Logger (infoM)
-import System.FilePath (takeExtension, (<.>), (</>), takeFileName, dropExtension)
+import System.FilePath (takeExtension, (<.>), (</>), takeFileName, dropExtension, takeDirectory)
 import System.Directory (doesFileExist)
 import System.Process (callProcess)
 import qualified Data.ByteString.Lazy as B
@@ -77,7 +77,7 @@ getTargetDirectoryPath :: RootSourceDir
 getTargetDirectoryPath (RootSourceDir rootSourceDir)
                        (RootTargetDir rootTargetDir)
                        sourceFilePath | rootSourceDir `startswith` sourceFilePath =
-                                                    Right . unpack $ replaceOne (pack rootSourceDir)
+                                                    Right . takeDirectory . unpack $ replaceOne (pack rootSourceDir)
                                                                                 (pack rootTargetDir)
                                                                                 (pack sourceFilePath)
                                       | otherwise = Left $ SourceFilePathIsNotUnderRootSourceDir (RootSourceDir rootSourceDir) sourceFilePath
@@ -130,11 +130,14 @@ isConversionNecessary sourceFilePath targetDirPath maybeDefaultPp3FilePath =
                 _ <- if targetPp3Exists
                      then EitherT . pure $ Right ()
                      else EitherT $ Left () <$ logTargetPp3FilePathDoesNotExistMsg targetPp3
-                [sourcePp3', targetPp3'] <- liftIO $ B.readFile `traverse` [sourcePp3, targetPp3]
-                let result' = sourcePp3' == targetPp3'
+                result' <- liftIO $ contentEquals sourcePp3 targetPp3
                 _ <- when (not result') . liftIO . putStrLn $ ("source pp3 file " <> em sourcePp3 <> " does not equal " <> em targetPp3)
                 pure result'
           in (const False `either` id) <$> runEitherT result
+          where contentEquals :: FilePath -> FilePath -> IO Bool
+                contentEquals fp1 fp2 = do
+                  [fp1B, fp2B] <- B.readFile `traverse` [fp1, fp2]
+                  pure $ fp1B == fp2B
 
         logTargetFilePathDoesNotExistMsg :: TargetFilePath -> IO ()
         logTargetFilePathDoesNotExistMsg targetFilePath =
@@ -159,7 +162,7 @@ determinePp3FilePath sourceFilePath =
     pure $ if doesFileExist' then Just pp3FilePath else Nothing
 
 toPp3FilePath :: FilePath -> PP3FilePath
-toPp3FilePath fp = dropExtension fp <.> "pp3"
+toPp3FilePath fp = fp <.> "pp3"
 
 type CR2FilePath = FilePath
 type PP3FilePath = FilePath
