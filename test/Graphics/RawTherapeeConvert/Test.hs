@@ -8,7 +8,7 @@ import Test.QuickCheck (Property, Arbitrary, arbitrary, property, ioProperty, (=
 import Test.HUnit (Assertion, assertEqual, assertBool)
 import Data.Monoid ((<>), Sum)
 import Data.Text (strip, Text, pack, unpack)
-import System.FilePath (pathSeparator, takeDirectory, (</>), takeFileName)
+import System.FilePath (pathSeparator, takeDirectory, (</>))
 import Graphics.RawTherapeeConvert
 import Control.Exception (catch, SomeException, throwIO)
 import System.Random (randomIO)
@@ -19,12 +19,15 @@ import Data.Conduit ((=$=), runConduit)
 import Control.Monad.Trans.Resource (runResourceT)
 import Control.Monad (when)
 import Data.Maybe (isJust, isNothing)
+import Debug.Trace (trace)
 
 tests :: [Test]
 tests = [
   testGroup "Graphics.RawTherapeeConvert" [
     testProperty "getTargetDirectoryPath should return a Left if sourceFilePath is not a subpath of root source dir and a Right otherwise"
       getTargetDirectoryShouldReturnTheCorrectEither
+  , testCase "getTargetDirectoryPath should work correctly"
+      getTargetDirectoryShouldWorkCorrectly
   , testCase "cr2Paths should be a stream emitting cr2 files only"
       cr2PathsShouldBeAStreamEmittingCr2FilesOnly
   , testCase "findPp3 should return the file path to the pp3 if it exists"
@@ -61,15 +64,25 @@ getTargetDirectoryShouldReturnTheCorrectEither
     let fpUp = takeDirectory fp
         anyString = unpack anyText
         fpDifferent = fpUp <> "bla"
-        dirPath rootSourceDir = getTargetDirectoryPath (RootSourceDir rootSourceDir)
-                                                       (RootTargetDir anyString)
-                                                       fp
+        dirPath rootSourceDir = getTargetDirectoryPath (RootSourceDir (trace ("rootSourceDir = " <> rootSourceDir) rootSourceDir))
+                                                       (RootTargetDir (trace ("rootTargetDir = " <> anyString) anyString))
+                                                       (trace ("source file path = " <> show fp) fp)
         leftResult = dirPath fpDifferent
         leftResultExpected = Left (SourceFilePathIsNotUnderRootSourceDir (RootSourceDir fpDifferent) fp)
         rightResult = dirPath fpUp
-        rightResultExpected = Right (anyString </> takeFileName fp) :: Either GetTargetDirectoryException String
+        rightResultExpected = Right anyString :: Either GetTargetDirectoryException String
     in property $ leftResult == leftResultExpected
                && rightResult == rightResultExpected
+
+getTargetDirectoryShouldWorkCorrectly :: Assertion
+getTargetDirectoryShouldWorkCorrectly =
+  let fp = "/bla/1/2/blubb.CR2"
+      targetDir = "/aha/x/"
+      result = getTargetDirectoryPath (RootSourceDir "/bla/")
+                                      (RootTargetDir targetDir)
+                                      fp
+      resultExpected = Right "/aha/x/1/2" :: Either GetTargetDirectoryException String
+  in assertEqual "" resultExpected result
 
 withEmptyTmpDir :: (FilePath -> IO x) -> IO x
 withEmptyTmpDir f = do
@@ -172,8 +185,8 @@ isConversionNecessaryShouldReturnFalseIfTargetPp3FileIsExistingAndEqualToGivenPp
 isConversionNecessaryShouldReturnFalseIfTargetPp3FileIsExistingAndEqualToGivenPp3 = withEmptyTmpDir $ \dir -> do
   (sourceDir, targetDir) <- createSourceAndTarget dir
   sourceFile <- let f = sourceDir </> "test.CR2" in f <$ writeFile f ""
-  _ <- writeFile (sourceDir </> "test.pp3") "a"
-  _ <- writeFile (targetDir </> "test.pp3") "a"
+  _ <- writeFile (sourceDir </> "test.CR2.pp3") "a"
+  _ <- writeFile (targetDir </> "test.jpg.pp3") "a"
   _ <- writeFile (targetDir </> "test.jpg") ""
   defaultPp3 <- let f = sourceDir </> "default.pp3" in Just f <$ writeFile f "b"
   result <- isConversionNecessary sourceFile targetDir defaultPp3
@@ -192,18 +205,24 @@ isConversionNecessaryShouldBehaveCorrectlyForAllCases :: SourceFilePathShouldCon
                                                       -> TargetFilePathShouldExist
                                                       -> DefaultPp3ShouldBeGiven
                                                       -> Property
-isConversionNecessaryShouldBehaveCorrectlyForAllCases (SourceFilePathShouldContainPp3 sourceFilePathShouldContainPp3)
-                                                      (TargetFilePathShouldContainPp3 targetFilePathShouldContainPp3)
-                                                      (SourcePp3ShouldEqualTargetPp3 sourcePp3ShouldEqualTargetPp3)
-                                                      (TargetFilePathShouldExist targetFilePathShouldExist)
+isConversionNecessaryShouldBehaveCorrectlyForAllCases (SourceFilePathShouldContainPp3 sourceFilePathShouldContainPp3) -- true
+                                                      (TargetFilePathShouldContainPp3 targetFilePathShouldContainPp3) -- true
+                                                      (SourcePp3ShouldEqualTargetPp3 sourcePp3ShouldEqualTargetPp3)   -- false
+                                                      (TargetFilePathShouldExist targetFilePathShouldExist)           -- true
                                                       (DefaultPp3ShouldBeGiven defaultPp3ShouldBeGiven) = ioProperty . withEmptyTmpDir $ \dir ->
   let targetPp3Content = if sourcePp3ShouldEqualTargetPp3 then "a" else "aa"
+      {-sourceFilePathShouldContainPp3 = True-}
+      {-targetFilePathShouldContainPp3 = True-}
+      {-sourcePp3ShouldEqualTargetPp3 = False-}
+      {-targetFilePathShouldExist = True-}
+      {-defaultPp3ShouldBeGiven = False-}
   in do
     (sourceDir, targetDir) <- createSourceAndTarget dir
     sourceFile <- let f = sourceDir </> "test.CR2" in f <$ writeFile f ""
     _ <- when targetFilePathShouldExist $ writeFile (targetDir </> "test.jpg") ""
-    _ <- when sourceFilePathShouldContainPp3 $ writeFile (sourceDir </> "test.jpg.pp3") "a"
+    _ <- when sourceFilePathShouldContainPp3 $ writeFile (sourceDir </> "test.CR2.pp3") "a"
     _ <- when targetFilePathShouldContainPp3 $ writeFile (targetDir </> "test.jpg.pp3") targetPp3Content
     defaultPp3 <- if defaultPp3ShouldBeGiven then let f = sourceDir </> "default.pp3" in Just f <$ writeFile f "a" else pure Nothing
     result <- isConversionNecessary sourceFile targetDir defaultPp3
-    pure $ result == not (targetFilePathShouldExist && targetFilePathShouldContainPp3 && (sourcePp3ShouldEqualTargetPp3 || (not sourceFilePathShouldContainPp3 && not defaultPp3ShouldBeGiven)))
+    let shouldBeNecessary = not (targetFilePathShouldExist && targetFilePathShouldContainPp3 && (sourcePp3ShouldEqualTargetPp3 || (not sourceFilePathShouldContainPp3 && not defaultPp3ShouldBeGiven)))
+    pure $ result == shouldBeNecessary
