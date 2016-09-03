@@ -1,16 +1,16 @@
+{-# LANGUAGE TupleSections #-}
 module Main where
 
 import System.Log.Logger (updateGlobalLogger, setLevel, Priority (DEBUG), addHandler, errorM, infoM)
 import System.Log.Handler.Syslog (openlog, Option (PID), Facility (USER))
-import System.Log.Handler.Simple (streamHandler)
-import System.IO (stdout)
 import Graphics.RawTherapeeConvert
 import Data.Conduit (Source, (=$=), runConduit)
 import Data.Monoid ((<>))
 import Control.Monad.Trans.Resource (ResourceT, runResourceT)
 import Control.Monad.Trans.Class (lift)
-import Control.Monad.Trans.Either (EitherT(..), runEitherT, left)
+import Control.Monad.Trans.Either (EitherT(..), runEitherT, left, swapEitherT)
 import Control.Monad.IO.Class (liftIO)
+import Control.Monad (void)
 import Control.Applicative ((<|>))
 import qualified Data.Conduit.Combinators as CC
 import System.Console.GetOpt (OptDescr(..), ArgDescr(..), getOpt, ArgOrder(..), usageInfo)
@@ -43,10 +43,10 @@ convert us =
                        "Successfully converted from " <> show rootSourceDir <> " to " <> show targetDir
                      NotConverted -> infoM loggerName $
                        "No need to convert " <> em sourceFilePath
-              conversionProcess = convertIt sourceFilePath (usDefaultPp3 us) `traverse` targetDirEither
-          in do
-            conversionResult <- (>>= (\d -> (\td -> (td, d)) <$> targetDirEither)) <$> conversionProcess
-            (targetDirExceptionLog `either` uncurry successfulConversionLog) conversionResult
+              conversionProcess = convertIt sourceFilePath (usDefaultPp3 us)
+          in void . runEitherT . (>>= liftIO . targetDirExceptionLog) . swapEitherT $ do
+            (decision, targetDir) <- EitherT $ (\targetDir -> (,targetDir) <$> conversionProcess targetDir) `traverse` targetDirEither
+            liftIO $ successfulConversionLog targetDir decision
 
         convertIt :: SourceFilePath -> Maybe PP3FilePath -> TargetDirPath -> IO ConversionDecision
         convertIt sourceFilePath maybePp3FilePath targetDirPath = do
@@ -74,7 +74,7 @@ convert us =
 
 type InputExceptionEither x = EitherT InputException IO x
 
-data ConversionDecision = Converted | NotConverted
+data ConversionDecision = Converted | NotConverted deriving (Show, Eq)
 
 logInputException :: InputException -> IO ()
 logInputException e = let msg s = header <> s <> "\n" <> usageInfo'
@@ -158,5 +158,4 @@ programName = "rawtherapee-convert"
 configureLogger :: IO ()
 configureLogger = do
   sysLogHandler <- openlog programName [PID] USER DEBUG
-  stdoutHandler <- streamHandler stdout DEBUG
-  updateGlobalLogger loggerName (setLevel DEBUG . addHandler sysLogHandler . addHandler stdoutHandler)
+  updateGlobalLogger loggerName (setLevel DEBUG . addHandler sysLogHandler)
