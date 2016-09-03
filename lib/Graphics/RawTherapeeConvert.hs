@@ -18,7 +18,8 @@ module Graphics.RawTherapeeConvert (
   execRTWithoutPp3,
   isConversionNecessary,
   determinePp3FilePath,
-  em
+  em,
+  toPp3FilePath
 ) where
 
 import Control.Monad.Trans.Resource (MonadResource, MonadBaseControl)
@@ -39,9 +40,9 @@ import System.Log.Logger (infoM)
 import System.FilePath (takeExtension, (<.>), (</>), takeFileName, dropExtension, takeDirectory)
 import System.Directory (doesFileExist)
 import System.Process (callProcess)
-{-import qualified Data.ByteString.Lazy as B-}
-import qualified Data.Text.Lazy as LT
-import qualified Data.Text.Lazy.IO as LTIO
+import qualified Data.ByteString.Lazy as B
+{-import qualified Data.Text.Lazy as LT-}
+{-import qualified Data.Text.Lazy.IO as LTIO-}
 import Data.Foldable (find)
 
 newtype RootSourceDir = RootSourceDir FilePath deriving (Show, Eq)
@@ -150,19 +151,16 @@ isConversionNecessary sourceFilePath targetDirPath maybeDefaultPp3FilePath =
           in (const False `either` id) <$> runEitherT result
           where contentEquals :: FilePath -> FilePath -> IO Bool
                 contentEquals fp1 fp2 =
-                  let filtered t = let containsAppVersion t' = case LT.breakOn "AppVersion" t' of (_, "") -> True
-                                                                                                  _       -> False
-                                   in containsAppVersion `filter` LT.lines t
-                  in do
-                    [fp1T, fp2T] <- LTIO.readFile `traverse` [fp1, fp2]
-                    pure $ filtered fp1T == filtered fp2T
+                  {-let filtered t = let containsAppVersion t' = case LT.breakOn "AppVersion" t' of (_, "") -> True-}
+                                                                                                  {-_       -> False-}
+                                   {-in containsAppVersion `filter` LT.lines t-}
+                  {-in do-}
+                    {-[fp1T, fp2T] <- LTIO.readFile `traverse` [fp1, fp2]-}
+                    {-pure $ filtered fp1T == filtered fp2T-}
                 -- this is enough when build problem with "AppVersion" key has been fixed
-                {-
-                 -contentEquals :: FilePath -> FilePath -> IO Bool
-                 -contentEquals fp1 fp2 = do
-                 -  [fp1B, fp2B] <- B.readFile `traverse` [fp1, fp2]
-                 -  pure $ fp1B == fp2B
-                 -}
+                  do
+                  [fp1B, fp2B] <- B.readFile `traverse` [fp1, fp2]
+                  pure $ fp1B == fp2B
 
         logTargetFilePathDoesNotExistMsg :: TargetFilePath -> IO ()
         logTargetFilePathDoesNotExistMsg targetFilePath =
@@ -211,7 +209,6 @@ execRT executable cr2Path pp3Path targetFilePath =
     , rcoPp3FilePath = Just pp3Path
   }
   in callProcess' executable params
-  -- TODO write the resulting PP3 back?
 
 execRTWithoutPp3 :: RTExec
                  -> CR2FilePath

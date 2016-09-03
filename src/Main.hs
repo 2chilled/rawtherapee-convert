@@ -15,9 +15,10 @@ import Control.Applicative ((<|>))
 import qualified Data.Conduit.Combinators as CC
 import System.Console.GetOpt (OptDescr(..), ArgDescr(..), getOpt, ArgOrder(..), usageInfo)
 import System.Environment (getArgs)
-import System.Directory (doesDirectoryExist, doesFileExist, getPermissions, executable, createDirectoryIfMissing)
-import System.FilePath ((</>), takeFileName)
+import System.Directory (doesDirectoryExist, doesFileExist, getPermissions, executable, createDirectoryIfMissing, copyFile)
+import System.FilePath ((</>), takeFileName, replaceExtension)
 import Data.String.Utils (strip)
+import Control.Arrow ((&&&))
 
 main :: IO ()
 main = do
@@ -36,37 +37,44 @@ convert us =
               targetDirEither = getTargetDirectoryPath rootSourceDir rootTargetDir sourceFilePath
               targetDirExceptionLog targetDirException = errorM loggerName $
                 "Error, this should have been validated: '" <> show targetDirException <> "'"
-              successfulConversionLog targetDir = infoM loggerName $
-                "Successfully converted from " <> show rootSourceDir <> " to " <> show targetDir
+              successfulConversionLog targetDir decision =
+                case decision
+                  of Converted    -> infoM loggerName $
+                       "Successfully converted from " <> show rootSourceDir <> " to " <> show targetDir
+                     NotConverted -> infoM loggerName $
+                       "No need to convert " <> em sourceFilePath
               conversionProcess = convertIt sourceFilePath (usDefaultPp3 us) `traverse` targetDirEither
           in do
-            conversionResult <- (*> targetDirEither) <$> conversionProcess
-            (targetDirExceptionLog `either` successfulConversionLog) conversionResult
+            conversionResult <- (>>= (\d -> (\td -> (td, d)) <$> targetDirEither)) <$> conversionProcess
+            (targetDirExceptionLog `either` uncurry successfulConversionLog) conversionResult
 
-        convertIt :: SourceFilePath -> Maybe PP3FilePath -> TargetDirPath -> IO ()
+        convertIt :: SourceFilePath -> Maybe PP3FilePath -> TargetDirPath -> IO ConversionDecision
         convertIt sourceFilePath maybePp3FilePath targetDirPath = do
           conversionNecessary <- isConversionNecessary sourceFilePath targetDirPath maybePp3FilePath
           if conversionNecessary then do
             createDirectoryIfMissing True targetDirPath
             existingPp3 <- determinePp3FilePath sourceFilePath
             let pp3FilePathToUse = existingPp3 <|> maybePp3FilePath
-            convertItFinally (usRtExec us) sourceFilePath pp3FilePathToUse targetDirPath
+            Converted <$ convertItFinally (usRtExec us) sourceFilePath pp3FilePathToUse targetDirPath
           else
-            infoM loggerName $ "No need to convert '" <> sourceFilePath <> "'"
+            pure NotConverted
 
         convertItFinally :: RTExec -> SourceFilePath -> Maybe PP3FilePath -> TargetDirPath -> IO ()
         convertItFinally rtExec sourceFilePath maybePp3FilePath targetDirPath =
           let resultErrorLog exception = errorM loggerName $ "Failed to convert file '" <> sourceFilePath <> "': " <> show exception
               resultSuccessLog = infoM loggerName $ "Successfully converted file '" <> sourceFilePath <> "' to '" <> targetFilePath <> "'"
-              targetFilePath = targetDirPath </> takeFileName sourceFilePath
+              targetFilePath = targetDirPath </> ((`replaceExtension` "jpg") . takeFileName $ sourceFilePath)
+              copyBackResultingPp3 = copyFile (toPp3FilePath targetFilePath)
               execRTWithoutPp3' = execRTWithoutPp3 rtExec sourceFilePath targetFilePath
               execRT' pp3FilePath = execRT rtExec sourceFilePath pp3FilePath targetFilePath
           in do
             infoM loggerName $ "Starting conversion of file '" <> sourceFilePath <> "'"
-            resultEither <- (execRTWithoutPp3' `maybe` execRT') maybePp3FilePath
+            resultEither <- (execRTWithoutPp3' `maybe` (uncurry (<*) . (execRT' &&& copyBackResultingPp3))) maybePp3FilePath
             (resultErrorLog `either` const resultSuccessLog) resultEither
 
 type InputExceptionEither x = EitherT InputException IO x
+
+data ConversionDecision = Converted | NotConverted
 
 logInputException :: InputException -> IO ()
 logInputException e = let msg s = header <> s <> "\n" <> usageInfo'
