@@ -16,7 +16,7 @@ import qualified Data.Conduit.Combinators as CC
 import System.Console.GetOpt (OptDescr(..), ArgDescr(..), getOpt, ArgOrder(..), usageInfo)
 import System.Environment (getArgs)
 import System.Directory (doesDirectoryExist, doesFileExist, getPermissions, executable, createDirectoryIfMissing, copyFile)
-import System.FilePath ((</>), takeFileName, replaceExtension)
+import System.FilePath ((</>), takeFileName, replaceExtension, pathSeparator)
 import Data.String.Utils (strip)
 import Control.Arrow ((&&&))
 
@@ -111,7 +111,7 @@ optDescriptions = [
   where directoryValidation :: FilePath -> InputExceptionEither FilePath
         directoryValidation fp = do
           doesExist <- liftIO $ doesDirectoryExist fp
-          if doesExist then pure (strip fp) else left . InputExceptionSemantic $ em fp <> " is not a directory"
+          if doesExist then pure (appendSlash . strip $ fp) else left . InputExceptionSemantic $ em fp <> " is not a directory"
 
         executableValidation :: FilePath -> InputExceptionEither FilePath
         executableValidation fp = do
@@ -121,6 +121,9 @@ optDescriptions = [
             of (False, _) -> left . InputExceptionSemantic $ em fp <> " is not a file"
                (_, False) -> left . InputExceptionSemantic $ em fp <> " is not executable"
                _          -> pure (strip fp)
+
+        appendSlash :: String -> String
+        appendSlash = reverse . (pathSeparator:) . dropWhile (== pathSeparator) . reverse
 
 usageInfo' :: String
 usageInfo' = usageInfo "Usage: rawtherapee-convert [OPTION...]" optDescriptions

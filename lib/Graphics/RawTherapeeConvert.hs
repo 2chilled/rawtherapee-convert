@@ -240,5 +240,3 @@ toRtCliOptionList opts = [
 
 callProcess' :: String -> [String] -> IO (Either IOException ())
 callProcess' executable args = try $ callProcess executable args
-
-  --rawtherapee -O converted/ -s -d -p /home/chief/.config/RawTherapee/profiles/my_default.pp3 -c IMG_0105.CR2

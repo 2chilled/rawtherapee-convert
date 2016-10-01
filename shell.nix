@@ -7,6 +7,6 @@ in {
     buildInputs = with haskellPkgs; [
       stack pkgs.zlib hasktags hdevtools ghc-mod
     ];
-    ghc = pkgs.haskell.packages.ghc7103.ghc;
+    ghc = pkgs.haskell.packages.ghc801.ghc;
   };
 }
