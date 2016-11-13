@@ -6,9 +6,10 @@ import System.Log.Handler.Syslog (openlog, Option (PID), Facility (USER))
 import Graphics.RawTherapeeConvert
 import Data.Conduit (Source, (=$=), runConduit)
 import Data.Monoid ((<>))
+import Data.List (intercalate)
 import Control.Monad.Trans.Resource (ResourceT, runResourceT)
 import Control.Monad.Trans.Class (lift)
-import Control.Monad.Trans.Either (EitherT(..), runEitherT, left, swapEitherT)
+import Control.Monad.Trans.Either (EitherT(..), runEitherT, left, swapEitherT, hoistEither)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad (void)
 import Control.Applicative ((<|>))
@@ -77,7 +78,7 @@ type InputExceptionEither x = EitherT InputException IO x
 data ConversionDecision = Converted | NotConverted deriving (Show, Eq)
 
 logInputException :: InputException -> IO ()
-logInputException e = let msg s = header <> s <> "\n" <> usageInfo'
+logInputException e = let msg s = if null s then usageInfo' else header <> s <> "\n" <> usageInfo'
                       in case e of (InputExceptionSyntax s)   -> putStrLn $ msg s
                                    (InputExceptionSemantic s) -> putStrLn $ msg s
   where header :: String
@@ -88,11 +89,25 @@ validateInputs = getArgs >>= (runEitherT . validateHelper)
   where validateHelper :: [String] -> InputExceptionEither UserSettings
         validateHelper args = case getOpt RequireOrder optDescriptions args of
           ([], _, []) -> left . InputExceptionSyntax $ ""
-          (parsedOpts, [], []) -> foldToEither parsedOpts
+          (parsedOpts, [], []) -> do
+            parsedUserSettings <- foldToEither parsedOpts
+            hoistEither . validateFlagExistence $ parsedUserSettings
           (_, _, errors) -> left . InputExceptionSyntax . unlines $ errors
 
         foldToEither :: [UserSettings -> InputExceptionEither UserSettings] -> InputExceptionEither UserSettings
         foldToEither = foldl (>>=) (pure emptyUserSettings)
+
+        validateFlagExistence :: UserSettings -> Either InputException UserSettings
+        validateFlagExistence us =
+          let errorTuples = [ (usSourceDir, "-b option must be provided")
+                            , (usTargetDir, "-t option must be provided")
+                            , (usRtExec, "-e option must be provided")
+                            ]
+              exceptionStrings = do
+                (f, errorString) <- errorTuples
+                if f us == "" then [errorString] else []
+              exception = InputExceptionSyntax $ intercalate "\n" exceptionStrings
+          in if null exceptionStrings then Right us else Left exception
 
 optDescriptions :: [OptDescr (UserSettings -> InputExceptionEither UserSettings)]
 optDescriptions = [
@@ -105,8 +120,12 @@ optDescriptions = [
     "Target dir where converted pictures will be saved to"
 
   , Option ['e'] ["executable"]
-    (ReqArg (\executablePath us -> (\e -> us { usRtExec = e }) <$> executableValidation executablePath ) "/home/user/pics_converted")
+    (ReqArg (\executablePath us -> (\e -> us { usRtExec = e }) <$> executableValidation executablePath ) "/usr/bin/rawtherapee")
     "Target dir where converted pictures will be saved to"
+
+  , Option ['n'] ["dryRun"]
+    (NoArg (\us -> pure $ us { usDryRun = True }))
+    "(Optional) Enable dry run doing nothing but printing what would be done"
   ]
   where directoryValidation :: FilePath -> InputExceptionEither FilePath
         directoryValidation fp = do
@@ -140,6 +159,7 @@ data UserSettings = UserSettings {
 , usDefaultPp3 :: Maybe PP3FilePath
   -- |Full path to the rawtherapee executable
 , usRtExec :: RTExec
+, usDryRun :: Bool
 } deriving (Show, Eq)
 
 emptyUserSettings :: UserSettings
@@ -148,6 +168,7 @@ emptyUserSettings = UserSettings {
 , usTargetDir = ""
 , usDefaultPp3 = Nothing
 , usRtExec = ""
+, usDryRun = False
 }
 
 --Logging
