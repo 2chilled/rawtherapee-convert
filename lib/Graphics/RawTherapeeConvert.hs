@@ -1,25 +1,26 @@
 {-# LANGUAGE FlexibleContexts, OverloadedStrings #-}
-module Graphics.RawTherapeeConvert (
-  filePaths,
-  RootSourceDir(..),
-  RootTargetDir(..),
-  GetTargetDirectoryException(..),
-  SourceFilePath,
-  TargetDirPath,
-  LoggerName(..),
-  cr2Paths,
-  getTargetDirectoryPath,
-  CR2FilePath,
-  PP3FilePath,
-  findPp3,
-  RTExec,
-  TargetFilePath,
-  execRT,
-  execRTWithoutPp3,
-  isConversionNecessary,
-  determinePp3FilePath,
-  em,
-  toPp3FilePath
+module Graphics.RawTherapeeConvert(
+  filePaths
+, RootSourceDir(..)
+, RootTargetDir(..)
+, GetTargetDirectoryException(..)
+, SourceFilePath
+, TargetDirPath
+, LoggerName(..)
+, cr2Paths
+, getTargetDirectoryPath
+, CR2FilePath
+, PP3FilePath
+, findPp3
+, RTExec
+, TargetFilePath
+, execRT
+, execRTWithoutPp3
+, isConversionNecessary
+, determinePp3FilePath
+, em
+, toPp3FilePath
+, probeRtInSysPath
 ) where
 
 import Control.Monad.Trans.Resource (MonadResource, MonadBaseControl)
@@ -38,7 +39,7 @@ import Control.Exception (IOException, try)
 import Data.String.Utils (startswith)
 import System.Log.Logger (infoM)
 import System.FilePath (takeExtension, (<.>), (</>), takeFileName, dropExtension, takeDirectory)
-import System.Directory (doesFileExist)
+import System.Directory (doesFileExist, findExecutable)
 import System.Process (callProcess)
 import qualified Data.ByteString.Lazy as B
 {-import qualified Data.Text.Lazy as LT-}
@@ -209,6 +210,9 @@ execRT executable cr2Path pp3Path targetFilePath =
     , rcoPp3FilePath = Just pp3Path
   }
   in callProcess' executable params
+
+probeRtInSysPath :: IO (Maybe FilePath)
+probeRtInSysPath = findExecutable "rawtherapee"
 
 execRTWithoutPp3 :: RTExec
                  -> CR2FilePath

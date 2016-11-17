@@ -90,7 +90,7 @@ validateInputs = getArgs >>= (runEitherT . validateHelper)
         validateHelper args = case getOpt RequireOrder optDescriptions args of
           ([], _, []) -> left . InputExceptionSyntax $ ""
           (parsedOpts, [], []) -> do
-            parsedUserSettings <- foldToEither parsedOpts
+            parsedUserSettings <-foldToEither parsedOpts >>= liftIO . usWithExecFlag
             hoistEither . validateFlagExistence $ parsedUserSettings
           (_, _, errors) -> left . InputExceptionSyntax . unlines $ errors
 
@@ -109,6 +109,13 @@ validateInputs = getArgs >>= (runEitherT . validateHelper)
                 if f us == "" then [errorString] else []
               exception = InputExceptionSyntax $ intercalate "\n" exceptionStrings
           in if null exceptionStrings then Right us else Left exception
+
+        usWithExecFlag :: UserSettings -> IO UserSettings
+        usWithExecFlag us =
+          if usRtExec us == ""
+          then let result = (fmap . fmap) (\path -> us {usRtExec = path}) probeRtInSysPath
+               in maybe us id <$> result
+          else pure us
 
 optDescriptions :: [OptDescr (UserSettings -> InputExceptionEither UserSettings)]
 optDescriptions = [
