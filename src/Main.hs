@@ -99,9 +99,10 @@ validateInputs = getArgs >>= (runEitherT . validateHelper)
 
         validateFlagExistence :: UserSettings -> Either InputException UserSettings
         validateFlagExistence us =
-          let errorTuples = [ (usSourceDir, "-b option must be provided")
-                            , (usTargetDir, "-t option must be provided")
-                            , (usRtExec, "-e option must be provided")
+          let mustBeProvidedMsg option = option <> " option must be provided"
+              errorTuples = [ (usSourceDir, mustBeProvidedMsg "-b")
+                            , (usTargetDir, mustBeProvidedMsg "-t")
+                            , (usRtExec, mustBeProvidedMsg "-e")
                             ]
               exceptionStrings = do
                 (f, errorString) <- errorTuples
