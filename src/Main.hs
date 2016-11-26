@@ -41,7 +41,7 @@ convert us =
               successfulConversionLog targetDir decision =
                 case decision
                   of Converted    -> infoM loggerName $
-                       "Successfully converted from " <> show rootSourceDir <> " to " <> show targetDir
+                       "Successfully converted " <> show sourceFilePath <> " to dir: " <> show targetDir
                      NotConverted -> infoM loggerName $
                        "No need to convert " <> em sourceFilePath
               conversionProcess = convertIt sourceFilePath (usDefaultPp3 us)
@@ -62,16 +62,20 @@ convert us =
 
         convertItFinally :: RTExec -> SourceFilePath -> Maybe PP3FilePath -> TargetDirPath -> IO ()
         convertItFinally rtExec sourceFilePath maybePp3FilePath targetDirPath =
-          let resultErrorLog exception = errorM loggerName $ "Failed to convert file '" <> sourceFilePath <> "': " <> show exception
-              resultSuccessLog = infoM loggerName $ "Successfully converted file '" <> sourceFilePath <> "' to '" <> targetFilePath <> "'"
+          let resultErrorLog exception = errorM loggerName $ "Failed to convert file " <> em sourceFilePath <> ": " <> show exception
               targetFilePath = targetDirPath </> ((`replaceExtension` "jpg") . takeFileName $ sourceFilePath)
               copyBackResultingPp3 = copyFile (toPp3FilePath targetFilePath)
               execRTWithoutPp3' = execRTWithoutPp3 rtExec sourceFilePath targetFilePath
               execRT' pp3FilePath = execRT rtExec sourceFilePath pp3FilePath targetFilePath
+              dryRun = usDryRun us
+              execWithPp3 = uncurry (<*) . (execRT' &&& copyBackResultingPp3)
           in do
-            infoM loggerName $ "Starting conversion of file '" <> sourceFilePath <> "'"
-            resultEither <- (execRTWithoutPp3' `maybe` (uncurry (<*) . (execRT' &&& copyBackResultingPp3))) maybePp3FilePath
-            (resultErrorLog `either` const resultSuccessLog) resultEither
+            infoM loggerName $ (if dryRun then wouldStartConvMsg else startConvMsg) sourceFilePath
+            resultEither <- if dryRun then pure . Right $ () else (execRTWithoutPp3' `maybe` execWithPp3) maybePp3FilePath
+            (resultErrorLog `either` (const . pure $ ())) resultEither
+
+          where wouldStartConvMsg fp = "Would start conversion of file " <> em fp
+                startConvMsg fp = "Starting conversion of file " <> em fp
 
 type InputExceptionEither x = EitherT InputException IO x
 
@@ -129,7 +133,7 @@ optDescriptions = [
 
   , Option ['e'] ["executable"]
     (ReqArg (\executablePath us -> (\e -> us { usRtExec = e }) <$> executableValidation executablePath ) "/usr/bin/rawtherapee")
-    "Target dir where converted pictures will be saved to"
+    "Path to the rawtherapee executable"
 
   , Option ['n'] ["dryRun"]
     (NoArg (\us -> pure $ us { usDryRun = True }))
@@ -167,6 +171,7 @@ data UserSettings = UserSettings {
 , usDefaultPp3 :: Maybe PP3FilePath
   -- |Full path to the rawtherapee executable
 , usRtExec :: RTExec
+  -- |Whether we should really do something
 , usDryRun :: Bool
 } deriving (Show, Eq)
 
