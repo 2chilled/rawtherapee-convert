@@ -1,6 +1,7 @@
 {-# LANGUAGE TupleSections #-}
 module Main where
 
+import Data.Maybe (fromMaybe)
 import System.Log.Logger (updateGlobalLogger, setLevel, Priority (DEBUG), addHandler, errorM, infoM)
 import System.Log.Handler.Syslog (openlog, Option (PID), Facility (USER))
 import Graphics.RawTherapeeConvert
@@ -110,7 +111,7 @@ validateInputs = getArgs >>= (runEitherT . validateHelper)
                             ]
               exceptionStrings = do
                 (f, errorString) <- errorTuples
-                if f us == "" then [errorString] else []
+                [errorString | f us == ""]
               exception = InputExceptionSyntax $ intercalate "\n" exceptionStrings
           in if null exceptionStrings then Right us else Left exception
 
@@ -118,7 +119,7 @@ validateInputs = getArgs >>= (runEitherT . validateHelper)
         usWithExecFlag us =
           if usRtExec us == ""
           then let result = (fmap . fmap) (\path -> us {usRtExec = path}) probeRtInSysPath
-               in maybe us id <$> result
+               in fromMaybe us <$> result
           else pure us
 
 optDescriptions :: [OptDescr (UserSettings -> InputExceptionEither UserSettings)]
