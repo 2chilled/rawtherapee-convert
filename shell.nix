@@ -5,7 +5,7 @@ in {
   scrapeChangesStackEnv = pkgs.haskell.lib.buildStackProject {
     name = "rawtherapeeProcStackEnv";
     buildInputs = with haskellPkgs; [
-      stack pkgs.zlib hasktags hdevtools ghc-mod
+      stack pkgs.zlib hasktags hdevtools ghc-mod ghcid
     ];
     ghc = pkgs.haskell.packages.ghc801.ghc;
   };
