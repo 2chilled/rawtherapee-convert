@@ -45,29 +45,45 @@ convert us =
                        "Successfully converted " <> show sourceFilePath <> " to dir: " <> show targetDir
                      NotConverted -> infoM loggerName $
                        "No need to convert " <> em sourceFilePath
-              conversionProcess = convertIt sourceFilePath (usDefaultPp3 us)
+              conversionProcess = convertIt sourceFilePath (usDefaultPp3 us) (usDlnaMode us)
           in void . runEitherT . (>>= liftIO . targetDirExceptionLog) . swapEitherT $ do
             (decision, targetDir) <- EitherT $ (\targetDir -> (,targetDir) <$> conversionProcess targetDir) `traverse` targetDirEither
             liftIO $ successfulConversionLog targetDir decision
 
-        convertIt :: SourceFilePath -> Maybe PP3FilePath -> TargetDirPath -> IO ConversionDecision
-        convertIt sourceFilePath maybePp3FilePath targetDirPath = do
+        convertIt :: SourceFilePath
+                  -> Maybe PP3FilePath
+                  -> DlnaMode
+                  -> TargetDirPath
+                  -> IO ConversionDecision
+        convertIt sourceFilePath
+                  maybePp3FilePath
+                  dlnaMode
+                  targetDirPath = do
           conversionNecessary <- isConversionNecessary sourceFilePath targetDirPath maybePp3FilePath
           if conversionNecessary then do
             createDirectoryIfMissing True targetDirPath
             existingPp3 <- determinePp3FilePath sourceFilePath
             let pp3FilePathToUse = existingPp3 <|> maybePp3FilePath
-            Converted <$ convertItFinally (usRtExec us) sourceFilePath pp3FilePathToUse targetDirPath
+            Converted <$ convertItFinally (usRtExec us) sourceFilePath pp3FilePathToUse dlnaMode targetDirPath
           else
             pure NotConverted
 
-        convertItFinally :: RTExec -> SourceFilePath -> Maybe PP3FilePath -> TargetDirPath -> IO ()
-        convertItFinally rtExec sourceFilePath maybePp3FilePath targetDirPath =
+        convertItFinally :: RTExec
+                         -> SourceFilePath
+                         -> Maybe PP3FilePath
+                         -> DlnaMode
+                         -> TargetDirPath
+                         -> IO ()
+        convertItFinally rtExec
+                         sourceFilePath
+                         maybePp3FilePath
+                         dlnaMode
+                         targetDirPath =
           let resultErrorLog exception = errorM loggerName $ "Failed to convert file " <> em sourceFilePath <> ": " <> show exception
               targetFilePath = targetDirPath </> ((`replaceExtension` "jpg") . takeFileName $ sourceFilePath)
               copyBackResultingPp3 = copyFile (toPp3FilePath targetFilePath)
-              execRTWithoutPp3' = execRTWithoutPp3 rtExec sourceFilePath targetFilePath
-              execRT' pp3FilePath = execRT rtExec sourceFilePath pp3FilePath targetFilePath
+              execRTWithoutPp3' = execRTWithoutPp3 rtExec sourceFilePath targetFilePath dlnaMode
+              execRT' pp3FilePath = execRT rtExec sourceFilePath pp3FilePath targetFilePath dlnaMode
               dryRun = usDryRun us
               execWithPp3 = uncurry (<*) . (execRT' &&& copyBackResultingPp3)
           in do
@@ -139,6 +155,10 @@ optDescriptions = [
   , Option ['n'] ["dryRun"]
     (NoArg (\us -> pure $ us { usDryRun = True }))
     "(Optional) Enable dry run doing nothing but printing what would be done"
+
+  , Option ['d'] ["dlnaMode"]
+    (NoArg (\us -> pure $ us { usDlnaMode = True }))
+    "(Optional) Enable DLNA mode to limit resolution of converted pictures to match DLNA constraints"
   ]
   where directoryValidation :: FilePath -> InputExceptionEither FilePath
         directoryValidation fp = do
@@ -170,6 +190,8 @@ data UserSettings = UserSettings {
 , usTargetDir :: FilePath
   -- |Default pp3 file we'll use for converting when there's no file specific one found
 , usDefaultPp3 :: Maybe PP3FilePath
+  -- |DLNA mode to automatically resize images to maximum resolution supported by dlna protocol
+, usDlnaMode :: Bool
   -- |Full path to the rawtherapee executable
 , usRtExec :: RTExec
   -- |Whether we should really do something
@@ -183,6 +205,7 @@ emptyUserSettings = UserSettings {
 , usDefaultPp3 = Nothing
 , usRtExec = ""
 , usDryRun = False
+, usDlnaMode = False
 }
 
 --Logging

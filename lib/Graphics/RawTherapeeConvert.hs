@@ -21,6 +21,7 @@ module Graphics.RawTherapeeConvert(
 , em
 , toPp3FilePath
 , probeRtInSysPath
+, DlnaMode
 ) where
 
 import Control.Monad.Trans.Resource (MonadResource, MonadBaseControl)
@@ -41,10 +42,10 @@ import System.Log.Logger (infoM)
 import System.FilePath (takeExtension, (<.>), (</>), takeFileName, dropExtension, takeDirectory)
 import System.Directory (doesFileExist, findExecutable)
 import System.Process (callProcess)
+import System.IO (hClose, Handle, hPutStr)
 import qualified Data.ByteString.Lazy as B
-{-import qualified Data.Text.Lazy as LT-}
-{-import qualified Data.Text.Lazy.IO as LTIO-}
 import Data.Foldable (find)
+import qualified System.IO.Temp as IOTemp
 
 newtype RootSourceDir = RootSourceDir FilePath deriving (Show, Eq)
 
@@ -198,18 +199,24 @@ findPp3 cr2 = let pp3 = cr2 <.> "pp3"
 type RTExec = FilePath
 type TargetFilePath = FilePath
 
+type DlnaMode = Bool
+
 execRT :: RTExec
        -> CR2FilePath
        -> PP3FilePath
        -> TargetFilePath
+       -> DlnaMode
        -> IO (Either IOException ())
-execRT executable cr2Path pp3Path targetFilePath =
-  let params = toRtCliOptionList $ RtCliOptions {
-      rcoCr2FilePath = cr2Path
-    , rcoTargetFilePath = targetFilePath
-    , rcoPp3FilePath = Just pp3Path
-  }
-  in callProcess' executable params
+execRT executable
+       cr2Path
+       pp3Path
+       targetFilePath
+       dlnaMode =
+  execRT' executable
+          cr2Path
+          (Just pp3Path)
+          targetFilePath
+          dlnaMode
 
 probeRtInSysPath :: IO (Maybe FilePath)
 probeRtInSysPath = findExecutable "rawtherapee"
@@ -217,21 +224,65 @@ probeRtInSysPath = findExecutable "rawtherapee"
 execRTWithoutPp3 :: RTExec
                  -> CR2FilePath
                  -> TargetFilePath
+                 -> DlnaMode
                  -> IO (Either IOException ())
-execRTWithoutPp3 executable cr2Path targetFilePath =
-  let params = toRtCliOptionList $ RtCliOptions {
-      rcoCr2FilePath = cr2Path
-    , rcoTargetFilePath = targetFilePath
-    , rcoPp3FilePath = Nothing
-  }
-  in callProcess' executable params
+execRTWithoutPp3 executable
+                 cr2Path
+                 targetFilePath
+                 dlnaMode =
+  execRT' executable
+          cr2Path
+          Nothing
+          targetFilePath
+          dlnaMode
 
 -- private
+
+execRT' :: RTExec
+        -> CR2FilePath
+        -> Maybe PP3FilePath
+        -> TargetFilePath
+        -> DlnaMode
+        -> IO (Either IOException ())
+execRT' executable
+        cr2Path
+        pp3Path
+        targetFilePath
+        dlnaMode =
+  let params dlnaPp3FilePath = toRtCliOptionList $ RtCliOptions {
+      rcoCr2FilePath = cr2Path
+    , rcoTargetFilePath = targetFilePath
+    , rcoPp3FilePath = pp3Path
+    , rcoDlnaPp3FilePath = dlnaPp3FilePath
+  }
+      callProcess''
+        tempFilePath tempHandle = do
+          params' <- if dlnaMode
+                     then writeDlnaFile tempHandle *> pure (params (Just tempFilePath))
+                     else pure (params Nothing)
+          callProcess' executable params'
+  in IOTemp.withSystemTempFile "rawtherapee-convert-dlna-mode-pp3" callProcess''
+  where
+    writeDlnaFile :: Handle -> IO ()
+    writeDlnaFile h =
+      let a = unlines [
+              "[Resize]"
+            , "Enabled=true"
+            , "Scale=1.0"
+            , "AppliesTo=Full image"
+            , "Method=Lanczos"
+            , "DataSpecified=3"
+            , "Width=4096"
+            , "Height=4096"
+            ]
+      in hPutStr h a
+      *> hClose h
 
 data RtCliOptions = RtCliOptions {
   rcoCr2FilePath :: String
 , rcoTargetFilePath :: String
 , rcoPp3FilePath :: Maybe String
+, rcoDlnaPp3FilePath :: Maybe String
 }
 
 toRtCliOptionList :: RtCliOptions -> [String]
@@ -241,6 +292,7 @@ toRtCliOptionList opts = [
   ]
   <> ["-d"] `fromMaybe` (("-p":) . pure <$> rcoPp3FilePath opts)
   <> ["-c", rcoCr2FilePath opts]
+  <> [] `fromMaybe` fmap (pure . ("-p " <>)) (rcoDlnaPp3FilePath opts)
 
 callProcess' :: String -> [String] -> IO (Either IOException ())
 callProcess' executable args = try $ callProcess executable args
