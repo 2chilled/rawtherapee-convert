@@ -5,16 +5,17 @@ import Data.Maybe (fromMaybe)
 import System.Log.Logger (updateGlobalLogger, setLevel, Priority (DEBUG), addHandler, errorM, infoM)
 import System.Log.Handler.Syslog (openlog, Option (PID), Facility (USER))
 import Graphics.RawTherapeeConvert
-import Data.Conduit (Source, (=$=), runConduit)
+import Data.Conduit ((.|), runConduit)
 import Data.Monoid ((<>))
 import Data.List (intercalate)
-import Control.Monad.Trans.Resource (ResourceT, runResourceT)
+import Control.Monad.Trans.Resource (runResourceT)
 import Control.Monad.Trans.Class (lift)
-import Control.Monad.Trans.Either (EitherT(..), runEitherT, left, swapEitherT, hoistEither)
 import Control.Monad.IO.Class (liftIO)
+import Control.Monad.Trans.Except (ExceptT(..), runExceptT, throwE, mapExceptT)
 import Control.Monad (void)
 import Control.Applicative ((<|>))
 import qualified Data.Conduit.Combinators as CC
+import Data.Either.Combinators (swapEither)
 import System.Console.GetOpt (OptDescr(..), ArgDescr(..), getOpt, ArgOrder(..), usageInfo)
 import System.Environment (getArgs)
 import System.Directory (doesDirectoryExist, doesFileExist, getPermissions, executable, createDirectoryIfMissing, copyFile)
@@ -30,8 +31,8 @@ main = do
 convert :: UserSettings -> IO ()
 convert us =
   let sourceDir = usSourceDir us
-      cr2Paths' = cr2Paths (LoggerName loggerName) sourceDir :: Source (ResourceT IO) FilePath
-      convertStream = cr2Paths' =$= CC.mapM_ (lift . convertHelper (RootSourceDir sourceDir))
+      cr2Paths' = cr2Paths (LoggerName loggerName) sourceDir
+      convertStream = cr2Paths' .| CC.mapM_ (lift . convertHelper (RootSourceDir sourceDir))
   in runResourceT . runConduit $ convertStream
   where convertHelper :: RootSourceDir -> SourceFilePath -> IO ()
         convertHelper rootSourceDir sourceFilePath =
@@ -46,8 +47,8 @@ convert us =
                      NotConverted -> infoM loggerName $
                        "No need to convert " <> em sourceFilePath
               conversionProcess = convertIt sourceFilePath (usDefaultPp3 us) (usDlnaMode us)
-          in void . runEitherT . (>>= liftIO . targetDirExceptionLog) . swapEitherT $ do
-            (decision, targetDir) <- EitherT $ (\targetDir -> (,targetDir) <$> conversionProcess targetDir) `traverse` targetDirEither
+          in void . runExceptT . (>>= liftIO . targetDirExceptionLog) . swapExceptT $ do
+            (decision, targetDir) <- ExceptT $ (\targetDir -> (,targetDir) <$> conversionProcess targetDir) `traverse` targetDirEither
             liftIO $ successfulConversionLog targetDir decision
 
         convertIt :: SourceFilePath
@@ -94,7 +95,7 @@ convert us =
           where wouldStartConvMsg fp = "Would start conversion of file " <> em fp
                 startConvMsg fp = "Starting conversion of file " <> em fp
 
-type InputExceptionEither x = EitherT InputException IO x
+type InputExceptionEither x = ExceptT InputException IO x
 
 data ConversionDecision = Converted | NotConverted deriving (Show, Eq)
 
@@ -106,14 +107,14 @@ logInputException e = let msg s = if null s then usageInfo' else header <> s <> 
         header = "Errors:\n"
 
 validateInputs :: IO (Either InputException UserSettings)
-validateInputs = getArgs >>= (runEitherT . validateHelper)
+validateInputs = getArgs >>= (runExceptT . validateHelper)
   where validateHelper :: [String] -> InputExceptionEither UserSettings
         validateHelper args = case getOpt RequireOrder optDescriptions args of
-          ([], _, []) -> left . InputExceptionSyntax $ ""
+          ([], _, []) -> throwE . InputExceptionSyntax $ ""
           (parsedOpts, [], []) -> do
             parsedUserSettings <-foldToEither parsedOpts >>= liftIO . usWithExecFlag
-            hoistEither . validateFlagExistence $ parsedUserSettings
-          (_, _, errors) -> left . InputExceptionSyntax . unlines $ errors
+            ExceptT . pure . validateFlagExistence $ parsedUserSettings
+          (_, _, errors) -> throwE . InputExceptionSyntax . unlines $ errors
 
         foldToEither :: [UserSettings -> InputExceptionEither UserSettings] -> InputExceptionEither UserSettings
         foldToEither = foldl (>>=) (pure emptyUserSettings)
@@ -163,15 +164,15 @@ optDescriptions = [
   where directoryValidation :: FilePath -> InputExceptionEither FilePath
         directoryValidation fp = do
           doesExist <- liftIO $ doesDirectoryExist fp
-          if doesExist then pure (appendSlash . strip $ fp) else left . InputExceptionSemantic $ em fp <> " is not a directory"
+          if doesExist then pure (appendSlash . strip $ fp) else throwE . InputExceptionSemantic $ em fp <> " is not a directory"
 
         executableValidation :: FilePath -> InputExceptionEither FilePath
         executableValidation fp = do
           doesExist <- liftIO $ doesFileExist fp
           isExecutable <- liftIO $ if doesExist then executable <$> getPermissions fp else pure False
           case (doesExist, isExecutable)
-            of (False, _) -> left . InputExceptionSemantic $ em fp <> " is not a file"
-               (_, False) -> left . InputExceptionSemantic $ em fp <> " is not executable"
+            of (False, _) -> throwE . InputExceptionSemantic $ em fp <> " is not a file"
+               (_, False) -> throwE . InputExceptionSemantic $ em fp <> " is not executable"
                _          -> pure (strip fp)
 
         appendSlash :: String -> String
@@ -220,3 +221,6 @@ configureLogger :: IO ()
 configureLogger = do
   sysLogHandler <- openlog programName [PID] USER DEBUG
   updateGlobalLogger loggerName (setLevel DEBUG . addHandler sysLogHandler)
+
+swapExceptT :: Functor m => ExceptT e m a -> ExceptT a m e
+swapExceptT = mapExceptT (fmap swapEither)

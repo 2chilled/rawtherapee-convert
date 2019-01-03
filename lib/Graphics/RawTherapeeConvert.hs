@@ -24,15 +24,14 @@ module Graphics.RawTherapeeConvert(
 , DlnaMode
 ) where
 
-import Control.Monad.Trans.Resource (MonadResource, MonadBaseControl)
-import Control.Monad.Trans.Either (EitherT(..), runEitherT, bimapEitherT)
-import Control.Monad.Base (liftBase)
+import Control.Monad.Trans.Resource (MonadResource)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad (when)
 import Control.Applicative ((<|>))
 import Data.Monoid ((<>), All(..), getAll)
 import qualified Data.Conduit.Combinators as CC
-import Data.Conduit ((=$=), Source, handleC, yield)
+import Data.Conduit ((.|), handleC, yield, ConduitT)
+import Conduit (MonadUnliftIO)
 import qualified Data.Text as T
 import Data.Text (unpack, pack, Text, breakOn)
 import Data.Maybe (fromMaybe)
@@ -46,6 +45,7 @@ import System.IO (hClose, Handle, hPutStr)
 import qualified Data.ByteString.Lazy as B
 import Data.Foldable (find)
 import qualified System.IO.Temp as IOTemp
+import Control.Monad.Trans.Except (ExceptT(..), runExceptT, withExceptT)
 
 newtype RootSourceDir = RootSourceDir FilePath deriving (Show, Eq)
 
@@ -57,21 +57,21 @@ type TargetDirPath = FilePath
 
 newtype LoggerName = LoggerName String deriving (Show, Eq)
 
-filePaths :: (MonadResource m, MonadBaseControl IO m) => LoggerName -> FilePath -> Source m FilePath
+filePaths :: (MonadResource m, MonadUnliftIO m) => LoggerName -> FilePath -> ConduitT () FilePath m ()
 filePaths (LoggerName loggerName) = errorHandled . (CC.sourceDirectoryDeep False)
   where errorHandled conduit =
           let eitherConduit = CC.map Right
               maybeConduit = CC.map (const Nothing `either` Just)
               filteredBySome = CC.concatMap id
               logConduit = let msg exception = "Could not access file: " <> show exception
-                               printMsg = liftBase . infoM loggerName . msg
+                               printMsg = liftIO . infoM loggerName . msg
                                doNothing = const . return $ ()
                            in CC.iterM $ printMsg `either` doNothing
               catched = handleC (\e -> yield (Left (e :: IOException)))
-          in catched (conduit =$= eitherConduit) =$= logConduit =$= maybeConduit =$= filteredBySome
+          in catched (conduit .| eitherConduit) .| logConduit .| maybeConduit .| filteredBySome
 
-cr2Paths :: (MonadResource m, MonadBaseControl IO m) => LoggerName -> FilePath -> Source m FilePath
-cr2Paths ln fp = filePaths ln fp =$= CC.filter ((== ".CR2") . takeExtension)
+cr2Paths :: (MonadResource m, MonadUnliftIO m) => LoggerName -> FilePath -> ConduitT () FilePath m ()
+cr2Paths ln fp = filePaths ln fp .| CC.filter ((== ".CR2") . takeExtension)
 
 data GetTargetDirectoryException = SourceFilePathIsNotUnderRootSourceDir RootSourceDir SourceFilePath
   deriving (Show, Eq)
@@ -101,7 +101,8 @@ isConversionNecessary sourceFilePath targetDirPath maybeDefaultPp3FilePath =
       targetPp3FilePathExists = let targetPp3FilePath = buildTargetPp3FilePath
                                     alternativeTargetPp3FilePath = buildAlternativeTargetPp3FilePath
                                     assertFileExists' p = assertFileExists p (logTargetPp3FilePathDoesNotExistMsg p)
-                                    leftMap f e = bimapEitherT f id e
+                                    leftMap f e = withExceptT f e
+
                                     result' = leftMap All (assertFileExists' targetPp3FilePath)
                                           <|> leftMap All (assertFileExists' alternativeTargetPp3FilePath)
                                 in leftMap getAll result'
@@ -112,7 +113,7 @@ isConversionNecessary sourceFilePath targetDirPath maybeDefaultPp3FilePath =
         _ <- targetPp3FilePathExists
         targetPp3FileEqualsGivenPp3File' <- liftIO $ sourcePp3FilePath >>= targetPp3FileEqualsGivenPp3File
         pure $ not targetPp3FileEqualsGivenPp3File'
-  in (id `either` id) <$> runEitherT result
+  in (id `either` id) <$> runExceptT result
 
   where buildTargetFilePath :: TargetFilePath
         buildTargetFilePath = targetDirPath </> dropExtension (takeFileName sourceFilePath) <.> "jpg"
@@ -127,11 +128,11 @@ isConversionNecessary sourceFilePath targetDirPath maybeDefaultPp3FilePath =
         sourcePp3FilePath = let p = toPp3FilePath sourceFilePath
                             in (\doesExist -> if doesExist then Just p else Nothing) <$> doesFileExist p
 
-        assertFileExists :: FilePath -> IO x -> EitherT Bool IO Bool
+        assertFileExists :: FilePath -> IO x -> ExceptT Bool IO Bool
         assertFileExists fp ifNot = let handler fileExists' = if fileExists'
                                                               then Right True
                                                               else Left $ True <$ ifNot
-                              in  EitherT . joinLeftSide $ handler <$> doesFileExist fp
+                              in  ExceptT . joinLeftSide $ handler <$> doesFileExist fp
           where joinLeftSide :: IO (Either (IO a) b) -> IO (Either a b)
                 joinLeftSide io = io >>= ((Left <$>) `either` (pure . Right))
 
@@ -145,12 +146,12 @@ isConversionNecessary sourceFilePath targetDirPath maybeDefaultPp3FilePath =
                 let (targetPp3Exists, targetPp3') = let existMaybe = ((== True) . fst) `find` (targetPp3ExistsResult `zip` targetPp3s)
                                                     in (False, targetPp3) `fromMaybe` existMaybe
                 _ <- if targetPp3Exists
-                     then EitherT . pure $ Right ()
-                     else EitherT $ Left () <$ logTargetPp3FilePathDoesNotExistMsg targetPp3'
+                     then ExceptT . pure $ Right ()
+                     else ExceptT $ Left () <$ logTargetPp3FilePathDoesNotExistMsg targetPp3'
                 result' <- liftIO $ contentEquals sourcePp3 targetPp3'
                 _ <- when (not result') . liftIO . putStrLn $ ("source pp3 file " <> em sourcePp3 <> " does not equal " <> em targetPp3')
                 pure result'
-          in (const False `either` id) <$> runEitherT result
+          in (const False `either` id) <$> runExceptT result
           where contentEquals :: FilePath -> FilePath -> IO Bool
                 contentEquals fp1 fp2 =
                   {-let filtered t = let containsAppVersion t' = case LT.breakOn "AppVersion" t' of (_, "") -> True-}
