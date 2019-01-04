@@ -22,9 +22,11 @@ in {
       stack
       pkgs.zlib
       myHaskTags
+      hoogle
       /*hdevtools*/ /*ghcid*/ #ghc-mod
       pkgs.fzf
     ];
     ghc = haskellPkgs.ghc;
+    HIE_HOOGLE_DATABASE=./.stack-work/hoogle/x86_64-linux-nix/lts-12.26/8.4.4/database.hoo;
   };
 }
