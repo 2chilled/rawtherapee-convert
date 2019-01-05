@@ -19,3 +19,8 @@ Features include:
 ## Why does this exist?
 This is exactly what the author needs for realising a smooth raw conversion process. The files will get
 converted to a raspberry pi and distributed within LAN from there. Maybe it's useful for anyone else.
+
+## TODO dlna mode
+1. Respect current pp3 Resize settings instead of simply overriding them.
+1. Don't override the source pp3 file when in dlna mode.
+1. Relax the src pp3 target pp3 equals function. If they differ only by dlna overrides, ignore that.
