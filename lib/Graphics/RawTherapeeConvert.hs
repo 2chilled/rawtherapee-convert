@@ -41,7 +41,7 @@ import System.Log.Logger (infoM)
 import System.FilePath (takeExtension, (<.>), (</>), takeFileName, dropExtension, takeDirectory)
 import System.Directory (doesFileExist, findExecutable)
 import System.Process (callProcess)
-import System.IO (hClose, Handle, hPutStr)
+import System.IO (Handle, hPutStr, hClose)
 import qualified Data.ByteString.Lazy as B
 import Data.Foldable (find)
 import qualified System.IO.Temp as IOTemp
@@ -292,8 +292,8 @@ toRtCliOptionList opts = [
     , "-Y"
   ]
   <> ["-d"] `fromMaybe` (("-p":) . pure <$> rcoPp3FilePath opts)
+  <> [] `fromMaybe` (("-p":) . pure <$> rcoDlnaPp3FilePath opts)
   <> ["-c", rcoCr2FilePath opts]
-  <> [] `fromMaybe` fmap (pure . ("-p " <>)) (rcoDlnaPp3FilePath opts)
 
 callProcess' :: String -> [String] -> IO (Either IOException ())
 callProcess' executable args = try $ callProcess executable args
