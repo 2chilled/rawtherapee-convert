@@ -1,12 +1,5 @@
-import Test.Framework
 import qualified Graphics.RawTherapeeConvert.Test as T
- 
+import Test.Hspec (hspec)
+
 main :: IO ()
-main = defaultMain tests
- 
-tests :: [Test]
-tests =
-  [
-   testGroup "Main test group"
-     T.tests
-  ]
+main = hspec T.tests

@@ -1,11 +1,9 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Graphics.RawTherapeeConvert.Test where
-import Test.Framework (Test, testGroup)
-import Test.Framework.Providers.HUnit (testCase)
-import Test.Framework.Providers.QuickCheck2 (testProperty)
+
+import Test.Hspec
 import Test.QuickCheck (Property, Arbitrary, arbitrary, property, ioProperty, (==>), listOf, elements)
-import Test.HUnit (Assertion, assertEqual, assertBool)
 import Data.Monoid ((<>), Sum)
 import Data.Text (strip, Text, pack, unpack)
 import System.FilePath (pathSeparator, takeDirectory, (</>))
@@ -15,33 +13,65 @@ import System.Random (randomIO)
 import System.Directory (getTemporaryDirectory, doesFileExist, doesDirectoryExist, removeDirectory, createDirectory)
 import Data.Foldable (sequenceA_)
 import qualified Data.Conduit.Combinators as CC
-import Data.Conduit ((=$=), runConduit)
+import Data.Conduit ((.|), runConduit)
 import Control.Monad.Trans.Resource (runResourceT)
 import Control.Monad (when)
 import Data.Maybe (isJust, isNothing)
 import Debug.Trace (trace)
 
-tests :: [Test]
-tests = [
-  testGroup "Graphics.RawTherapeeConvert" [
-    testProperty "getTargetDirectoryPath should return a Left if sourceFilePath is not a subpath of root source dir and a Right otherwise"
-      getTargetDirectoryShouldReturnTheCorrectEither
-  , testCase "getTargetDirectoryPath should work correctly"
-      getTargetDirectoryShouldWorkCorrectly
-  , testCase "cr2Paths should be a stream emitting cr2 files only"
-      cr2PathsShouldBeAStreamEmittingCr2FilesOnly
-  , testCase "findPp3 should return the file path to the pp3 if it exists"
-      findPp3ShouldReturnTheFilePathToThePp3IfItExists
-  , testProperty "isConversionNecessary should return true if target pp3 file is not existing"
-      isConversionNecessaryShouldReturnTrueIfTargetPp3FileIsNotExisting
-  , testCase "isConversionNecessary should return true if target pp3 file is existing but not equal to given pp3"
-      isConversionNecessaryShouldReturnTrueIfTargetPp3FileIsExistingButNotEqualToGivenPp3
-  , testCase "isConversionNecessaryShouldReturnFalseIfTargetPp3FileIsExistingAndEqualToGivenPp3"
-      isConversionNecessaryShouldReturnFalseIfTargetPp3FileIsExistingAndEqualToGivenPp3
-  , testProperty "isConversionNecessary should behave correctly for all cases"
-      isConversionNecessaryShouldBehaveCorrectlyForAllCases
-    ]
-  ]
+tests :: SpecWith ()
+tests =
+  describe "Graphics.RawTherapeeConvert" $ do
+    describe "getTargetDirectoryPath" $ do
+      it "should return a Left if sourceFilePath is not a subpath of root source dir and a Right otherwise" $
+        property getTargetDirectoryShouldReturnTheCorrectEither
+      it "should work correctly" $
+          let fp = "/bla/1/2/blubb.CR2"
+              targetDir = "/aha/x/"
+              result = getTargetDirectoryPath (RootSourceDir "/bla/")
+                                              (RootTargetDir targetDir)
+                                              fp
+              resultExpected = Right "/aha/x/1/2" :: Either GetTargetDirectoryException String
+          in result `shouldBe` resultExpected
+    describe "cr2Paths" $
+      it "should be a stream emitting cr2 files only" $
+        withEmptyTmpDir $ \dir -> do
+          sequenceA_ $ createFile dir <$> ["file1.CR2", "file2.CR2", "any.txt"]
+          let toTest = cr2Paths testLogger dir .| CC.map (const (1 :: Sum Int)) .| CC.fold
+          result <- runResourceT . runConduit $ toTest
+          result `shouldBe` 2
+    describe "findPp3" $
+      it "should return the file path to the pp3 if it exists" $
+        withEmptyTmpDir $ \dir -> do
+          [f1Cr2, _, f2Cr2] <- sequenceA $ createFile dir <$> ["file1.CR2", "file1.CR2.pp3", "file2.CR2"]
+          result1 <- findPp3 f1Cr2
+          result2 <- findPp3 f2Cr2
+          isJust result1 `shouldBe` True
+          isNothing result2 `shouldBe` True
+    describe "isConversionNecessary" $ do
+      it "should return true if target pp3 file is not existing" $
+        property isConversionNecessaryShouldReturnTrueIfTargetPp3FileIsNotExisting
+      it "should return true if target pp3 file is existing but not equal to given pp3" $
+        withEmptyTmpDir $ \dir -> do
+          (sourceDir, targetDir) <- createSourceAndTarget dir
+          sourceFile <- let f = sourceDir </> "test.CR2" in f <$ writeFile f ""
+          _ <- writeFile (sourceDir </> "test.pp3") "a"
+          _ <- writeFile (targetDir </> "test.pp3") "b"
+          defaultPp3 <- let f = sourceDir </> "default.pp3" in Just f <$ writeFile f "b"
+          result <- isConversionNecessary sourceFile targetDir defaultPp3
+          result `shouldBe` True
+      it "should return False if target pp3 file is existing and equal to given pp3" $
+        withEmptyTmpDir $ \dir -> do
+          (sourceDir, targetDir) <- createSourceAndTarget dir
+          sourceFile <- let f = sourceDir </> "test.CR2" in f <$ writeFile f ""
+          _ <- writeFile (sourceDir </> "test.pp3") "a"
+          _ <- writeFile (targetDir </> "test.pp3") "b"
+          defaultPp3 <- let f = sourceDir </> "default.pp3" in Just f <$ writeFile f "b"
+          result <- isConversionNecessary sourceFile targetDir defaultPp3
+          result `shouldBe` True
+
+      it "should behave correctly for all cases" $
+        property isConversionNecessaryShouldBehaveCorrectlyForAllCases
 
 newtype TestFilePath = TestFilePath FilePath deriving (Show, Eq)
 
@@ -73,16 +103,6 @@ getTargetDirectoryShouldReturnTheCorrectEither
         rightResultExpected = Right anyString :: Either GetTargetDirectoryException String
     in property $ leftResult == leftResultExpected
                && rightResult == rightResultExpected
-
-getTargetDirectoryShouldWorkCorrectly :: Assertion
-getTargetDirectoryShouldWorkCorrectly =
-  let fp = "/bla/1/2/blubb.CR2"
-      targetDir = "/aha/x/"
-      result = getTargetDirectoryPath (RootSourceDir "/bla/")
-                                      (RootTargetDir targetDir)
-                                      fp
-      resultExpected = Right "/aha/x/1/2" :: Either GetTargetDirectoryException String
-  in assertEqual "" resultExpected result
 
 withEmptyTmpDir :: (FilePath -> IO x) -> IO x
 withEmptyTmpDir f = do
@@ -120,21 +140,6 @@ createFile :: Parent -> FilePath -> IO FilePath
 createFile p fp = let resultPath = p </> fp
                   in resultPath <$ writeFile resultPath ""
 
-cr2PathsShouldBeAStreamEmittingCr2FilesOnly :: Assertion
-cr2PathsShouldBeAStreamEmittingCr2FilesOnly = withEmptyTmpDir $ \dir -> do
-  sequenceA_ $ createFile dir <$> ["file1.CR2", "file2.CR2", "any.txt"]
-  let toTest = cr2Paths testLogger dir =$= CC.map (const (1 :: Sum Int)) =$= CC.fold
-  result <- runResourceT . runConduit $ toTest
-  assertEqual "" 2 result
-
-findPp3ShouldReturnTheFilePathToThePp3IfItExists :: Assertion
-findPp3ShouldReturnTheFilePathToThePp3IfItExists = withEmptyTmpDir $ \dir -> do
-  [f1Cr2, _, f2Cr2] <- sequenceA $ createFile dir <$> ["file1.CR2", "file1.CR2.pp3", "file2.CR2"]
-  result1 <- findPp3 f1Cr2
-  result2 <- findPp3 f2Cr2
-  assertBool "" (isJust result1)
-  assertBool "" (isNothing result2)
-
 newtype SourceFilePathShouldContainPp3 = SourceFilePathShouldContainPp3 Bool deriving (Show, Eq)
 
 instance Arbitrary SourceFilePathShouldContainPp3 where
@@ -170,27 +175,6 @@ isConversionNecessaryShouldReturnTrueIfTargetPp3FileIsNotExisting (SourceFilePat
   _ <- when sourceFilePathShouldContainPp3 (writeFile (sourceDir </> "test.pp3") "")
   defaultPp3 <- if defaultPp3ShouldBeGiven then let f = sourceDir </> "default.pp3" in Just f <$ writeFile f "" else pure Nothing
   isConversionNecessary sourceFile targetDir defaultPp3
-
-isConversionNecessaryShouldReturnTrueIfTargetPp3FileIsExistingButNotEqualToGivenPp3 :: Assertion
-isConversionNecessaryShouldReturnTrueIfTargetPp3FileIsExistingButNotEqualToGivenPp3 = withEmptyTmpDir $ \dir -> do
-  (sourceDir, targetDir) <- createSourceAndTarget dir
-  sourceFile <- let f = sourceDir </> "test.CR2" in f <$ writeFile f ""
-  _ <- writeFile (sourceDir </> "test.pp3") "a"
-  _ <- writeFile (targetDir </> "test.pp3") "b"
-  defaultPp3 <- let f = sourceDir </> "default.pp3" in Just f <$ writeFile f "b"
-  result <- isConversionNecessary sourceFile targetDir defaultPp3
-  assertBool "" result
-
-isConversionNecessaryShouldReturnFalseIfTargetPp3FileIsExistingAndEqualToGivenPp3 :: Assertion
-isConversionNecessaryShouldReturnFalseIfTargetPp3FileIsExistingAndEqualToGivenPp3 = withEmptyTmpDir $ \dir -> do
-  (sourceDir, targetDir) <- createSourceAndTarget dir
-  sourceFile <- let f = sourceDir </> "test.CR2" in f <$ writeFile f ""
-  _ <- writeFile (sourceDir </> "test.CR2.pp3") "a"
-  _ <- writeFile (targetDir </> "test.jpg.pp3") "a"
-  _ <- writeFile (targetDir </> "test.jpg") ""
-  defaultPp3 <- let f = sourceDir </> "default.pp3" in Just f <$ writeFile f "b"
-  result <- isConversionNecessary sourceFile targetDir defaultPp3
-  assertBool "" (not result)
 
 createSourceAndTarget :: FilePath -> IO (FilePath, FilePath)
 createSourceAndTarget dir =

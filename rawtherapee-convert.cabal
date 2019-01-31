@@ -60,10 +60,7 @@ test-suite rawtherapee-convert-tests
   other-modules:       Graphics.RawTherapeeConvert.Test
   build-depends:       base >=4.7 && < 5
                      , QuickCheck >=2.0
-                     , test-framework >=0.1.0
-                     , test-framework-quickcheck2 >=0.3.0.3
-                     , test-framework-hunit >= 0.3.0.2
-                     , HUnit >= 1.2.5.2
+                     , hspec
                      , rawtherapee-convert
                      , filepath >= 1.3 && < 2.0
                      , directory >= 1.2 && < 2.0
