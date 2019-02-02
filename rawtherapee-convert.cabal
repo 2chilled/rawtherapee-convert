@@ -51,6 +51,7 @@ library
                      , either >= 4.0 && < 5.1
                      , bytestring >= 0.10 && < 1.0
                      , temporary >= 1.2 && < 1.4
+                     , ini >= 0.4
   ghc-options:         -Wall
 
 test-suite rawtherapee-convert-tests

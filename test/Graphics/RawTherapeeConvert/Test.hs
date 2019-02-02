@@ -2,6 +2,7 @@
 
 module Graphics.RawTherapeeConvert.Test where
 
+import Data.Ini (readIniFile)
 import Test.Hspec
 import Test.QuickCheck (Property, Arbitrary, arbitrary, property, ioProperty, (==>), listOf, elements)
 import Data.Monoid ((<>), Sum)
@@ -72,6 +73,11 @@ tests =
 
       it "should behave correctly for all cases" $
         property isConversionNecessaryShouldBehaveCorrectlyForAllCases
+    describe "parseIni" $ do
+      it "should be able to parse our pp3 file" $ do
+        either' <- readIniFile "test/resources/IMG_3695.CR2.pp3"
+        ("" :: String) <$ either' `shouldNotBe` Left ""
+
 
 newtype TestFilePath = TestFilePath FilePath deriving (Show, Eq)
 
