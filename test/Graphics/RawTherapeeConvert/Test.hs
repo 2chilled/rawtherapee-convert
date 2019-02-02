@@ -15,7 +15,7 @@ import Data.Foldable (sequenceA_)
 import qualified Data.Conduit.Combinators as CC
 import Data.Conduit ((.|), runConduit)
 import Control.Monad.Trans.Resource (runResourceT)
-import Control.Monad (when)
+import Control.Monad (when, (>=>))
 import Data.Maybe (isJust, isNothing)
 import Debug.Trace (trace)
 
@@ -52,8 +52,7 @@ tests =
       it "should return true if target pp3 file is not existing" $
         property isConversionNecessaryShouldReturnTrueIfTargetPp3FileIsNotExisting
       it "should return true if target pp3 file is existing but not equal to given pp3" $
-        withEmptyTmpDir $ \dir -> do
-          (sourceDir, targetDir) <- createSourceAndTarget dir
+        withEmptySourceAndTarget $ \sourceDir targetDir -> do
           sourceFile <- let f = sourceDir </> "test.CR2" in f <$ writeFile f ""
           _ <- writeFile (sourceDir </> "test.pp3") "a"
           _ <- writeFile (targetDir </> "test.pp3") "b"
@@ -64,11 +63,12 @@ tests =
         withEmptyTmpDir $ \dir -> do
           (sourceDir, targetDir) <- createSourceAndTarget dir
           sourceFile <- let f = sourceDir </> "test.CR2" in f <$ writeFile f ""
-          _ <- writeFile (sourceDir </> "test.pp3") "a"
-          _ <- writeFile (targetDir </> "test.pp3") "b"
+          _ <- writeFile (sourceDir </> "test.CR2.pp3") "a"
+          _ <- writeFile (targetDir </> "test.jpg.pp3") "a"
+          _ <- writeFile (targetDir </> "test.jpg") ""
           defaultPp3 <- let f = sourceDir </> "default.pp3" in Just f <$ writeFile f "b"
           result <- isConversionNecessary sourceFile targetDir defaultPp3
-          result `shouldBe` True
+          result `shouldBe` False
 
       it "should behave correctly for all cases" $
         property isConversionNecessaryShouldBehaveCorrectlyForAllCases
@@ -108,7 +108,6 @@ withEmptyTmpDir :: (FilePath -> IO x) -> IO x
 withEmptyTmpDir f = do
   tmpDir <- getEmptyTemporaryDirectory
   f tmpDir `catch` handler tmpDir
-
   where handler :: FilePath -> SomeException -> IO x
         handler fp e = do
           removeDirectory fp `catch` (handleAll . const $ return ())
@@ -117,20 +116,32 @@ withEmptyTmpDir f = do
         handleAll :: (SomeException -> IO x) -> SomeException -> IO x
         handleAll f' = f'
 
-        getEmptyTemporaryDirectory :: IO FilePath
-        getEmptyTemporaryDirectory = do
-          randomTempDir <- (</>) <$> getTemporaryDirectory <*> randomString
-          existingFileOrDir' <- existingFileOrDir randomTempDir
-          emptyDir <- if existingFileOrDir' then getEmptyTemporaryDirectory
-                      else return randomTempDir
-          createDirectory emptyDir
-          return emptyDir
 
-        existingFileOrDir :: FilePath -> IO Bool
-        existingFileOrDir fp = (||) <$> doesFileExist fp <*> doesDirectoryExist fp
+withEmptySourceAndTarget :: (FilePath -> FilePath -> IO x) -> IO x
+withEmptySourceAndTarget f =
+  withEmptyTmpDir $ createSourceAndTarget >=> uncurry f
 
-        randomString :: IO String
-        randomString = show <$> (randomIO :: IO Int)
+createSourceFile :: FilePath -> IO FilePath
+createSourceFile sourceDir = let f = sourceDir </> "test.CR2" in f <$ writeFile f ""
+
+withSourceTargetAndSourceFile :: (FilePath -> FilePath -> FilePath -> IO x) -> IO x
+withSourceTargetAndSourceFile f =
+  withEmptySourceAndTarget $
+    \sourceDir targetDir -> createSourceFile sourceDir >>= f sourceDir targetDir
+
+getEmptyTemporaryDirectory :: IO FilePath
+getEmptyTemporaryDirectory = do
+  randomTempDir <- (</>) <$> getTemporaryDirectory <*> randomString
+  existingFileOrDir' <- existingFileOrDir randomTempDir
+  emptyDir <- if existingFileOrDir' then getEmptyTemporaryDirectory
+              else return randomTempDir
+  createDirectory emptyDir
+  return emptyDir
+  where
+    existingFileOrDir :: FilePath -> IO Bool
+    existingFileOrDir fp = (||) <$> doesFileExist fp <*> doesDirectoryExist fp
+    randomString :: IO String
+    randomString = show <$> (randomIO :: IO Int)
 
 testLogger :: LoggerName
 testLogger = LoggerName "testLogger"
@@ -169,12 +180,14 @@ isConversionNecessaryShouldReturnTrueIfTargetPp3FileIsNotExisting :: SourceFileP
                                                                   -> DefaultPp3ShouldBeGiven
                                                                   -> Property
 isConversionNecessaryShouldReturnTrueIfTargetPp3FileIsNotExisting (SourceFilePathShouldContainPp3 sourceFilePathShouldContainPp3)
-                                                                  (DefaultPp3ShouldBeGiven defaultPp3ShouldBeGiven) = ioProperty . withEmptyTmpDir $ \dir -> do
-  [sourceDir, targetDir] <- let d = [dir </> "source", dir </> "target"] in d <$ createDirectory `traverse` d
-  sourceFile <- let f = sourceDir </> "test.CR2" in f <$ writeFile f ""
-  _ <- when sourceFilePathShouldContainPp3 (writeFile (sourceDir </> "test.pp3") "")
+                                                                  (DefaultPp3ShouldBeGiven defaultPp3ShouldBeGiven) =
+  ioProperty . withSourceTargetAndSourceFile  $ \sourceDir targetDir sourceFile -> do
+  _ <- when sourceFilePathShouldContainPp3 (writePp3 sourceDir)
   defaultPp3 <- if defaultPp3ShouldBeGiven then let f = sourceDir </> "default.pp3" in Just f <$ writeFile f "" else pure Nothing
   isConversionNecessary sourceFile targetDir defaultPp3
+
+writePp3 :: FilePath -> IO ()
+writePp3 sourceDir = writeFile (sourceDir </> "test.pp3") ""
 
 createSourceAndTarget :: FilePath -> IO (FilePath, FilePath)
 createSourceAndTarget dir =
@@ -193,20 +206,14 @@ isConversionNecessaryShouldBehaveCorrectlyForAllCases (SourceFilePathShouldConta
                                                       (TargetFilePathShouldContainPp3 targetFilePathShouldContainPp3) -- true
                                                       (SourcePp3ShouldEqualTargetPp3 sourcePp3ShouldEqualTargetPp3)   -- false
                                                       (TargetFilePathShouldExist targetFilePathShouldExist)           -- true
-                                                      (DefaultPp3ShouldBeGiven defaultPp3ShouldBeGiven) = ioProperty . withEmptyTmpDir $ \dir ->
-  let targetPp3Content = if sourcePp3ShouldEqualTargetPp3 then "a" else "aa"
-      {-sourceFilePathShouldContainPp3 = True-}
-      {-targetFilePathShouldContainPp3 = True-}
-      {-sourcePp3ShouldEqualTargetPp3 = False-}
-      {-targetFilePathShouldExist = True-}
-      {-defaultPp3ShouldBeGiven = False-}
-  in do
-    (sourceDir, targetDir) <- createSourceAndTarget dir
-    sourceFile <- let f = sourceDir </> "test.CR2" in f <$ writeFile f ""
-    _ <- when targetFilePathShouldExist $ writeFile (targetDir </> "test.jpg") ""
-    _ <- when sourceFilePathShouldContainPp3 $ writeFile (sourceDir </> "test.CR2.pp3") "a"
-    _ <- when targetFilePathShouldContainPp3 $ writeFile (targetDir </> "test.jpg.pp3") targetPp3Content
-    defaultPp3 <- if defaultPp3ShouldBeGiven then let f = sourceDir </> "default.pp3" in Just f <$ writeFile f "a" else pure Nothing
-    result <- isConversionNecessary sourceFile targetDir defaultPp3
-    let shouldBeNecessary = not (targetFilePathShouldExist && targetFilePathShouldContainPp3 && (sourcePp3ShouldEqualTargetPp3 || (not sourceFilePathShouldContainPp3 && not defaultPp3ShouldBeGiven)))
-    pure $ result == shouldBeNecessary
+                                                      (DefaultPp3ShouldBeGiven defaultPp3ShouldBeGiven) =
+  ioProperty .withSourceTargetAndSourceFile $ \sourceDir targetDir sourceFile ->
+    let targetPp3Content = if sourcePp3ShouldEqualTargetPp3 then "a" else "aa"
+    in do
+      _ <- when targetFilePathShouldExist $ writeFile (targetDir </> "test.jpg") ""
+      _ <- when sourceFilePathShouldContainPp3 $ writeFile (sourceDir </> "test.CR2.pp3") "a"
+      _ <- when targetFilePathShouldContainPp3 $ writeFile (targetDir </> "test.jpg.pp3") targetPp3Content
+      defaultPp3 <- if defaultPp3ShouldBeGiven then let f = sourceDir </> "default.pp3" in Just f <$ writeFile f "a" else pure Nothing
+      result <- isConversionNecessary sourceFile targetDir defaultPp3
+      let shouldBeNecessary = not (targetFilePathShouldExist && targetFilePathShouldContainPp3 && (sourcePp3ShouldEqualTargetPp3 || (not sourceFilePathShouldContainPp3 && not defaultPp3ShouldBeGiven)))
+      pure $ result == shouldBeNecessary
