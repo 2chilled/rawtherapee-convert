@@ -73,7 +73,7 @@ tests =
 
       it "should behave correctly for all cases" $
         property isConversionNecessaryShouldBehaveCorrectlyForAllCases
-    describe "parseIni" $ do
+    describe "parseIni" $
       it "should be able to parse our pp3 file" $ do
         either' <- readIniFile "test/resources/IMG_3695.CR2.pp3"
         ("" :: String) <$ either' `shouldNotBe` Left ""

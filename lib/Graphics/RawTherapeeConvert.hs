@@ -22,6 +22,7 @@ module Graphics.RawTherapeeConvert(
 , toPp3FilePath
 , probeRtInSysPath
 , DlnaMode
+, dlnaIniEntries
 ) where
 
 import Control.Monad.Trans.Resource (MonadResource)
@@ -46,6 +47,7 @@ import qualified Data.ByteString.Lazy as B
 import Data.Foldable (find)
 import qualified System.IO.Temp as IOTemp
 import Control.Monad.Trans.Except (ExceptT(..), runExceptT, withExceptT)
+import Data.HashMap.Strict (HashMap)
 
 newtype RootSourceDir = RootSourceDir FilePath deriving (Show, Eq)
 
@@ -236,6 +238,16 @@ execRTWithoutPp3 executable
           Nothing
           targetFilePath
           dlnaMode
+
+dlnaIniEntries :: [(Text, Text)]
+dlnaIniEntries =
+  [ ("Enabled", "true")
+  , ("Scale", "1")
+  , ("AppliesTo", "Full image")
+  , ("Method", "Lanczos")
+  , ("Width", "4096")
+  , ("Height", "4096")
+  ]
 
 -- private
 
