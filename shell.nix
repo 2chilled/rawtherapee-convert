@@ -23,6 +23,7 @@ in {
       pkgs.zlib
       myHaskTags
       hoogle
+      brittany
       /*hdevtools*/ /*ghcid*/ #ghc-mod
       pkgs.fzf
     ];
