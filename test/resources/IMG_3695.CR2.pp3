@@ -324,7 +324,7 @@ CenterX=0
 CenterY=0
 
 [Resize]
-Enabled=true
+Enabled=false
 Scale=1
 AppliesTo=Full image
 Method=Lanczos

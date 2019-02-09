@@ -23,12 +23,15 @@ module Graphics.RawTherapeeConvert
   , probeRtInSysPath
   , DlnaMode
   , dlnaIniEntries
+  , extractDlnaIniEntries
   )
 where
 
 import           Control.Monad.Trans.Resource   ( MonadResource )
 import           Control.Monad.IO.Class         ( liftIO )
-import           Control.Monad                  ( when )
+import           Control.Monad                  ( when
+                                                , join
+                                                )
 import           Control.Applicative            ( (<|>) )
 import           Data.Monoid                    ( (<>)
                                                 , All(..)
@@ -47,7 +50,9 @@ import           Data.Text                      ( unpack
                                                 , Text
                                                 , breakOn
                                                 )
-import           Data.Maybe                     ( fromMaybe )
+import           Data.Maybe                     ( fromMaybe
+                                                , maybeToList
+                                                )
 import           Control.Exception              ( IOException
                                                 , try
                                                 )
@@ -75,7 +80,8 @@ import           Control.Monad.Trans.Except     ( ExceptT(..)
                                                 , runExceptT
                                                 , withExceptT
                                                 )
-import           Data.HashMap.Strict            ( HashMap )
+import qualified Data.HashMap.Lazy             as HashMap
+import           Data.Ini                       ( Ini(..) )
 
 newtype RootSourceDir = RootSourceDir FilePath deriving (Show, Eq)
 
@@ -326,6 +332,11 @@ dlnaIniEntries =
   , ("Width"    , "4096")
   , ("Height"   , "4096")
   ]
+
+extractDlnaIniEntries :: Ini -> [(Text, Text)]
+extractDlnaIniEntries (Ini sections _) =
+  let maybeDlnaIniEntries = HashMap.lookup "Resize" sections
+  in  join . maybeToList $ maybeDlnaIniEntries
 
 -- private
 
