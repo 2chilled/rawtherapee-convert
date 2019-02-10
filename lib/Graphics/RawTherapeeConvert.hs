@@ -24,6 +24,7 @@ module Graphics.RawTherapeeConvert
   , DlnaMode
   , dlnaIniEntries
   , extractDlnaIniEntries
+  , copyBackResultingPp3
   )
 where
 
@@ -356,6 +357,16 @@ setDlnaInitEntries :: Ini -> Ini
 setDlnaInitEntries (Ini sections globals) = Ini (setResizeSection sections)
                                                 globals
   where setResizeSection = HashMap.adjust (const dlnaIniEntries) "Resize"
+
+-- TODO if maybePp3FilePath is Just AND dlnaMode, SAFE the original Resize setting from
+-- sourceFilePaths
+copyBackResultingPp3 :: DlnaMode -> TargetFilePath -> SourceFilePath -> IO ()
+copyBackResultingPp3 = undefined
+  --if dlnaMode then
+    --do
+      --iniEither <- readIniFile
+  --else
+    --copyFile (toPp3FilePath targetFilePath)
 
 -- private
 
