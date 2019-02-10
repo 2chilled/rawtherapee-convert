@@ -140,6 +140,8 @@ convert us =
           targetFilePath =
             targetDirPath
               </> ((`replaceExtension` "jpg") . takeFileName $ sourceFilePath)
+          -- TODO if maybePp3FilePath is Just AND dlnaMode, SAFE the original Resize setting from
+          -- sourceFilePaths
           copyBackResultingPp3 = copyFile (toPp3FilePath targetFilePath)
           execRTWithoutPp3' =
             execRTWithoutPp3 rtExec sourceFilePath targetFilePath dlnaMode

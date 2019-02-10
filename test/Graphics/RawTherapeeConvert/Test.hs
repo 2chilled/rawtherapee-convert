@@ -102,7 +102,7 @@ tests = describe "Graphics.RawTherapeeConvert" $ do
           _          <- writeFile (targetDir </> "test.pp3") "b"
           defaultPp3 <-
             let f = sourceDir </> "default.pp3" in Just f <$ writeFile f "b"
-          result <- isConversionNecessary sourceFile targetDir defaultPp3
+          result <- isConversionNecessary sourceFile targetDir defaultPp3 False
           result `shouldBe` True
     it
         "should return False if target pp3 file is existing and equal to given pp3"
@@ -115,7 +115,7 @@ tests = describe "Graphics.RawTherapeeConvert" $ do
           _                      <- writeFile (targetDir </> "test.jpg") ""
           defaultPp3             <-
             let f = sourceDir </> "default.pp3" in Just f <$ writeFile f "b"
-          result <- isConversionNecessary sourceFile targetDir defaultPp3
+          result <- isConversionNecessary sourceFile targetDir defaultPp3 False
           result `shouldBe` False
 
     it "should behave correctly for all cases"
@@ -272,7 +272,7 @@ isConversionNecessaryShouldReturnTrueIfTargetPp3FileIsNotExisting (SourceFilePat
         defaultPp3 <- if defaultPp3ShouldBeGiven
           then let f = sourceDir </> "default.pp3" in Just f <$ writeFile f ""
           else pure Nothing
-        isConversionNecessary sourceFile targetDir defaultPp3
+        isConversionNecessary sourceFile targetDir defaultPp3 False
 
 writePp3 :: FilePath -> IO ()
 writePp3 sourceDir = writeFile (sourceDir </> "test.pp3") ""
@@ -314,7 +314,7 @@ isConversionNecessaryShouldBehaveCorrectlyForAllCases (SourceFilePathShouldConta
                 let f = sourceDir </> "default.pp3"
                 in  Just f <$ writeFile f "a"
               else pure Nothing
-            result <- isConversionNecessary sourceFile targetDir defaultPp3
+            result <- isConversionNecessary sourceFile targetDir defaultPp3 False
             let shouldBeNecessary = not
                   (  targetFilePathShouldExist
                   && targetFilePathShouldContainPp3

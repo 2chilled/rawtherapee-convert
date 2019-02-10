@@ -81,7 +81,9 @@ import           Control.Monad.Trans.Except     ( ExceptT(..)
                                                 , withExceptT
                                                 )
 import qualified Data.HashMap.Lazy             as HashMap
-import           Data.Ini                       ( Ini(..) )
+import           Data.Ini                       ( Ini(..)
+                                                , readIniFile
+                                                )
 
 newtype RootSourceDir = RootSourceDir FilePath deriving (Show, Eq)
 
@@ -148,38 +150,39 @@ getTargetDirectoryPath (RootSourceDir rootSourceDir) (RootTargetDir rootTargetDi
     where (front, back) = breakOn pattern text
 
 isConversionNecessary
-  :: SourceFilePath -> TargetDirPath -> Maybe PP3FilePath -> IO Bool
-isConversionNecessary sourceFilePath targetDirPath maybeDefaultPp3FilePath =
-  let
-    targetFilePathExists =
-      let targetFilePath = buildTargetFilePath
-      in  assertFileExists targetFilePath
-                           (logTargetFilePathDoesNotExistMsg targetFilePath)
-    targetPp3FilePathExists =
-      let
-        targetPp3FilePath            = buildTargetPp3FilePath
-        alternativeTargetPp3FilePath = buildAlternativeTargetPp3FilePath
-        assertFileExists' p =
-          assertFileExists p (logTargetPp3FilePathDoesNotExistMsg p)
-        leftMap f e = withExceptT f e
+  :: SourceFilePath -> TargetDirPath -> Maybe PP3FilePath -> DlnaMode -> IO Bool
+isConversionNecessary sourceFilePath targetDirPath maybeDefaultPp3FilePath dlnaMode
+  = let
+      targetFilePathExists =
+        let targetFilePath = buildTargetFilePath
+        in  assertFileExists targetFilePath
+                             (logTargetFilePathDoesNotExistMsg targetFilePath)
+      targetPp3FilePathExists =
+        let
+          targetPp3FilePath            = buildTargetPp3FilePath
+          alternativeTargetPp3FilePath = buildAlternativeTargetPp3FilePath
+          assertFileExists' p =
+            assertFileExists p (logTargetPp3FilePathDoesNotExistMsg p)
+          leftMap f e = withExceptT f e
 
-        result' = leftMap All (assertFileExists' targetPp3FilePath)
-          <|> leftMap All (assertFileExists' alternativeTargetPp3FilePath)
-      in
-        leftMap getAll result'
-    targetPp3FileEqualsGivenPp3File maybeSourcePp3FilePath =
-      getAll
-        .          foldMap All
-        <$>        equalsTargetPp3FilePath
-        `traverse` (maybeSourcePp3FilePath <|> maybeDefaultPp3FilePath)
-    result = do
-      _ <- targetFilePathExists
-      _ <- targetPp3FilePathExists
-      targetPp3FileEqualsGivenPp3File' <-
-        liftIO $ sourcePp3FilePath >>= targetPp3FileEqualsGivenPp3File
-      pure $ not targetPp3FileEqualsGivenPp3File'
-  in
-    (id `either` id) <$> runExceptT result
+          result' =
+            leftMap All (assertFileExists' targetPp3FilePath)
+              <|> leftMap All (assertFileExists' alternativeTargetPp3FilePath)
+        in
+          leftMap getAll result'
+      targetPp3FileEqualsGivenPp3File maybeSourcePp3FilePath =
+        getAll
+          .          foldMap All
+          <$>        flip equalsTargetPp3FilePath dlnaMode
+          `traverse` (maybeSourcePp3FilePath <|> maybeDefaultPp3FilePath)
+      result = do
+        _ <- targetFilePathExists
+        _ <- targetPp3FilePathExists
+        targetPp3FileEqualsGivenPp3File' <-
+          liftIO $ sourcePp3FilePath >>= targetPp3FileEqualsGivenPp3File
+        pure $ not targetPp3FileEqualsGivenPp3File'
+    in
+      (id `either` id) <$> runExceptT result
  where
   buildTargetFilePath :: TargetFilePath
   buildTargetFilePath =
@@ -207,8 +210,8 @@ isConversionNecessary sourceFilePath targetDirPath maybeDefaultPp3FilePath =
     joinLeftSide :: IO (Either (IO a) b) -> IO (Either a b)
     joinLeftSide io = io >>= ((Left <$>) `either` (pure . Right))
 
-  equalsTargetPp3FilePath :: PP3FilePath -> IO Bool
-  equalsTargetPp3FilePath sourcePp3
+  equalsTargetPp3FilePath :: PP3FilePath -> DlnaMode -> IO Bool
+  equalsTargetPp3FilePath sourcePp3 dlnaMode'
     = let
         targetPp3            = buildTargetPp3FilePath
         alternativeTargetPp3 = buildAlternativeTargetPp3FilePath
@@ -228,7 +231,7 @@ isConversionNecessary sourceFilePath targetDirPath maybeDefaultPp3FilePath =
               ExceptT
               $  Left ()
               <$ logTargetPp3FilePathDoesNotExistMsg targetPp3'
-          result' <- liftIO $ contentEquals sourcePp3 targetPp3'
+          result' <- liftIO $ contentEquals sourcePp3 targetPp3' dlnaMode'
           _       <-
             when (not result')
             . liftIO
@@ -242,8 +245,22 @@ isConversionNecessary sourceFilePath targetDirPath maybeDefaultPp3FilePath =
       in
         (const False `either` id) <$> runExceptT result
    where
-    contentEquals :: FilePath -> FilePath -> IO Bool
-    contentEquals fp1 fp2 =
+    contentEquals :: FilePath -> FilePath -> DlnaMode -> IO Bool
+    contentEquals fp1 fp2 False = contentEquals' B.readFile fp1 fp2
+    contentEquals fp1 fp2 True  = contentEquals'
+      ( (>>= either (\error' -> fail (show error')) (pure . setDlnaInitEntries))
+      . readIniFile
+      )
+      fp1
+      fp2
+
+    contentEquals' :: (Applicative m, Eq b) => (a -> m b) -> a -> a -> m Bool
+    contentEquals' readAction fp1' fp2' =
+      let isEqual x = case x of
+            [a, b] -> a == b
+            _      -> False
+          readResults = readAction `traverse` [fp1', fp2']
+      in  fmap isEqual readResults
       {-let filtered t = let containsAppVersion t' = case LT.breakOn "AppVersion" t' of (_, "") -> True-}
                                                                                       {-_       -> False-}
                        {-in containsAppVersion `filter` LT.lines t-}
@@ -251,9 +268,6 @@ isConversionNecessary sourceFilePath targetDirPath maybeDefaultPp3FilePath =
         {-[fp1T, fp2T] <- LTIO.readFile `traverse` [fp1, fp2]-}
         {-pure $ filtered fp1T == filtered fp2T-}
     -- this is enough when build problem with "AppVersion" key has been fixed
-                            do
-      [fp1B, fp2B] <- B.readFile `traverse` [fp1, fp2]
-      pure $ fp1B == fp2B
 
   logTargetFilePathDoesNotExistMsg :: TargetFilePath -> IO ()
   logTargetFilePathDoesNotExistMsg targetFilePath =
@@ -337,6 +351,11 @@ extractDlnaIniEntries :: Ini -> [(Text, Text)]
 extractDlnaIniEntries (Ini sections _) =
   let maybeDlnaIniEntries = HashMap.lookup "Resize" sections
   in  join . maybeToList $ maybeDlnaIniEntries
+
+setDlnaInitEntries :: Ini -> Ini
+setDlnaInitEntries (Ini sections globals) = Ini (setResizeSection sections)
+                                                globals
+  where setResizeSection = HashMap.adjust (const dlnaIniEntries) "Resize"
 
 -- private
 
