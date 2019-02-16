@@ -68,6 +68,7 @@ import           System.FilePath                ( takeExtension
                                                 )
 import           System.Directory               ( doesFileExist
                                                 , findExecutable
+                                                , copyFile
                                                 )
 import           System.Process                 ( callProcess )
 import           System.IO                      ( Handle
@@ -83,8 +84,8 @@ import           Control.Monad.Trans.Except     ( ExceptT(..)
                                                 )
 import qualified Data.HashMap.Lazy             as HashMap
 import           Data.Ini                       ( Ini(..)
-                                                , readIniFile
                                                 )
+import           qualified Data.Ini             as Ini
 
 newtype RootSourceDir = RootSourceDir FilePath deriving (Show, Eq)
 
@@ -250,7 +251,7 @@ isConversionNecessary sourceFilePath targetDirPath maybeDefaultPp3FilePath dlnaM
     contentEquals fp1 fp2 False = contentEquals' B.readFile fp1 fp2
     contentEquals fp1 fp2 True  = contentEquals'
       ( (>>= either (\error' -> fail (show error')) (pure . setDlnaInitEntries))
-      . readIniFile
+      . Ini.readIniFile
       )
       fp1
       fp2
@@ -361,12 +362,17 @@ setDlnaInitEntries (Ini sections globals) = Ini (setResizeSection sections)
 -- TODO if maybePp3FilePath is Just AND dlnaMode, SAFE the original Resize setting from
 -- sourceFilePaths
 copyBackResultingPp3 :: DlnaMode -> TargetFilePath -> SourceFilePath -> IO ()
-copyBackResultingPp3 = undefined
-  --if dlnaMode then
-    --do
-      --iniEither <- readIniFile
-  --else
-    --copyFile (toPp3FilePath targetFilePath)
+copyBackResultingPp3 False targetFilePath sourceFilePath =
+  copyFile (toPp3FilePath targetFilePath) sourceFilePath
+copyBackResultingPp3 True targetFilePath sourceFilePath =
+  do
+    Right (targetIni) <- Ini.readIniFile targetFilePath
+    Right (sourceIni) <- Ini.readIniFile sourceFilePath
+    let dlnaIniEntriesOfSource = extractDlnaIniEntries sourceIni
+    let targetIniWithOriginalDlnaEntries =
+          let originalDlnaEntries = (HashMap.insert "Resize" dlnaIniEntriesOfSource . Ini.iniSections) targetIni
+          in targetIni { Ini.iniSections = originalDlnaEntries}
+    Ini.writeIniFile sourceFilePath targetIniWithOriginalDlnaEntries
 
 -- private
 

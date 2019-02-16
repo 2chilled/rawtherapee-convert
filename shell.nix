@@ -3,27 +3,27 @@ let pkgs =
   in import (localPkgs.fetchFromGitHub {
     owner = "NixOS";
     repo = "nixpkgs";
-    rev = "cfbf9f0664050a31599e3f348a6b9ec8b13ca87b";
-    sha256 = "08k3hzgl43frz7bm0hhx5gyhrvn39yn2k76x9wj0wsddh76wpijh";
+    rev = "91c7157919081c5bbc8cb808e27d89ed4a8cbef7";
+    sha256 = "0hqscxpkgnpvm8354sxf3vi7j6chzv0dsy3g8pgmhfacha4hfwl5";
   }) {};
   myHaskTags = pkgs.haskell.lib.dontCheck haskellPkgs.hasktags;
-  haskellPkgs = pkgs.haskell.packages.ghc844;
+  haskellPkgs = pkgs.haskell.packages.ghc863;
   hiePkgs = import (pkgs.fetchFromGitHub {
     owner = "domenkozar";
     repo = "hie-nix";
-    rev = "19f47e0bf2e2f1a793bf87d64bf8266062f422b1";
-    sha256 = "1px146agwmsi0nznc1zd9zmhgjczz6zlb5yf21sp4mixzzbjsasq";
+    rev = "6794005f909600679d0b7894d0e7140985920775";
+    sha256 = "0pc90ns0xcsa6b630d8kkq5zg8yzszbgd7qmnylkqpa0l58zvnpn";
   }){};
 in {
   scrapeChangesStackEnv = pkgs.haskell.lib.buildStackProject {
     name = "rawtherapeeProcStackEnv";
     buildInputs = with haskellPkgs; [
-      hiePkgs.hie84
+      hiePkgs.hie86
       stack
       pkgs.zlib
       myHaskTags
       hoogle
-      brittany
+      #brittany
       /*hdevtools*/ /*ghcid*/ #ghc-mod
       pkgs.fzf
     ];
