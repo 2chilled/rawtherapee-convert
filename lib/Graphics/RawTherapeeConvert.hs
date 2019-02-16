@@ -361,10 +361,10 @@ setDlnaInitEntries (Ini sections globals) = Ini (setResizeSection sections)
 
 -- TODO if maybePp3FilePath is Just AND dlnaMode, SAFE the original Resize setting from
 -- sourceFilePaths
-copyBackResultingPp3 :: DlnaMode -> TargetFilePath -> SourceFilePath -> IO ()
-copyBackResultingPp3 False targetFilePath sourceFilePath =
+copyBackResultingPp3 :: DlnaMode -> SourceFilePath -> TargetFilePath -> IO ()
+copyBackResultingPp3 False sourceFilePath targetFilePath =
   copyFile (toPp3FilePath targetFilePath) sourceFilePath
-copyBackResultingPp3 True targetFilePath sourceFilePath =
+copyBackResultingPp3 True sourceFilePath targetFilePath =
   do
     Right (targetIni) <- Ini.readIniFile targetFilePath
     Right (sourceIni) <- Ini.readIniFile sourceFilePath

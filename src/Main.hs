@@ -43,7 +43,6 @@ import           System.Directory               ( doesDirectoryExist
                                                 , getPermissions
                                                 , executable
                                                 , createDirectoryIfMissing
-                                                , copyFile
                                                 )
 import           System.FilePath                ( (</>)
                                                 , takeFileName
@@ -110,6 +109,7 @@ convert us =
     conversionNecessary <- isConversionNecessary sourceFilePath
                                                  targetDirPath
                                                  maybePp3FilePath
+                                                 dlnaMode
     if conversionNecessary
       then do
         createDirectoryIfMissing True targetDirPath
@@ -145,7 +145,7 @@ convert us =
           execRT' pp3FilePath =
             execRT rtExec sourceFilePath pp3FilePath targetFilePath dlnaMode
           dryRun      = usDryRun us
-          execWithPp3 = uncurry (<*) . (execRT' &&& copyBackResultingPp3 dlnaMode)
+          execWithPp3 = uncurry (<*) . (execRT' &&& copyBackResultingPp3 dlnaMode sourceFilePath)
       in  do
             infoM loggerName
               $ (if dryRun then wouldStartConvMsg else startConvMsg)
