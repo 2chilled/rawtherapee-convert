@@ -71,10 +71,6 @@ import           System.Directory               ( doesFileExist
                                                 , copyFile
                                                 )
 import           System.Process                 ( callProcess )
-import           System.IO                      ( Handle
-                                                , hPutStr
-                                                , hClose
-                                                )
 import qualified Data.ByteString.Lazy          as B
 import           Data.Foldable                  ( find )
 import qualified System.IO.Temp                as IOTemp
@@ -351,16 +347,14 @@ dlnaIniEntries =
 
 extractDlnaIniEntries :: Ini -> [(Text, Text)]
 extractDlnaIniEntries (Ini sections _) =
-  let maybeDlnaIniEntries = HashMap.lookup "Resize" sections
+  let maybeDlnaIniEntries = HashMap.lookup dlnaIniEntryKey sections
   in  join . maybeToList $ maybeDlnaIniEntries
 
 setDlnaInitEntries :: Ini -> Ini
 setDlnaInitEntries (Ini sections globals) = Ini (setResizeSection sections)
                                                 globals
-  where setResizeSection = HashMap.adjust (const dlnaIniEntries) "Resize"
+  where setResizeSection = HashMap.adjust (const dlnaIniEntries) dlnaIniEntryKey
 
--- TODO if maybePp3FilePath is Just AND dlnaMode, SAFE the original Resize setting from
--- sourceFilePaths
 copyBackResultingPp3 :: DlnaMode -> SourceFilePath -> TargetFilePath -> IO ()
 copyBackResultingPp3 False sourceFilePath targetFilePath =
   copyFile (toPp3FilePath targetFilePath) sourceFilePath
@@ -370,7 +364,7 @@ copyBackResultingPp3 True sourceFilePath targetFilePath =
     Right (sourceIni) <- Ini.readIniFile sourceFilePath
     let dlnaIniEntriesOfSource = extractDlnaIniEntries sourceIni
     let targetIniWithOriginalDlnaEntries =
-          let originalDlnaEntries = (HashMap.insert "Resize" dlnaIniEntriesOfSource . Ini.iniSections) targetIni
+          let originalDlnaEntries = (HashMap.insert dlnaIniEntryKey dlnaIniEntriesOfSource . Ini.iniSections) targetIni
           in targetIni { Ini.iniSections = originalDlnaEntries}
     Ini.writeIniFile sourceFilePath targetIniWithOriginalDlnaEntries
 
@@ -390,27 +384,18 @@ execRT' executable cr2Path pp3Path targetFilePath dlnaMode =
         , rcoPp3FilePath     = pp3Path
         , rcoDlnaPp3FilePath = dlnaPp3FilePath
         }
-      callProcess'' tempFilePath tempHandle = do
+      callProcess'' tempFilePath _ = do
         params' <- if dlnaMode
-          then writeDlnaFile tempHandle *> pure (params (Just tempFilePath))
+          then writeDlnaFile tempFilePath *> pure (params (Just tempFilePath))
           else pure (params Nothing)
         callProcess' executable params'
   in  IOTemp.withSystemTempFile "rawtherapee-convert-dlna-mode-pp3"
                                 callProcess''
  where
-  writeDlnaFile :: Handle -> IO ()
-  writeDlnaFile h =
-    let a = unlines
-          [ "[Resize]"
-          , "Enabled=true"
-          , "Scale=1.0"
-          , "AppliesTo=Full image"
-          , "Method=Lanczos"
-          , "DataSpecified=3"
-          , "Width=4096"
-          , "Height=4096"
-          ]
-    in  hPutStr h a *> hClose h
+  writeDlnaFile :: FilePath -> IO ()
+  writeDlnaFile fp =
+    let ini = Ini (HashMap.fromList [("Resize", dlnaIniEntries)]) []
+    in  Ini.writeIniFile fp ini
 
 data RtCliOptions = RtCliOptions {
   rcoCr2FilePath :: String
@@ -430,3 +415,6 @@ toRtCliOptionList opts =
 
 callProcess' :: String -> [String] -> IO (Either IOException ())
 callProcess' executable args = try $ callProcess executable args
+
+dlnaIniEntryKey :: Text
+dlnaIniEntryKey = "Resize"
