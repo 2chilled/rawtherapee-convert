@@ -28,6 +28,7 @@ module Graphics.RawTherapeeConvert
   )
 where
 
+import System.IO(Handle)
 import           Control.Monad.Trans.Resource   ( MonadResource )
 import           Control.Monad.IO.Class         ( liftIO )
 import           Control.Monad                  ( when
@@ -46,6 +47,7 @@ import           Data.Conduit                   ( (.|)
                                                 )
 import           Conduit                        ( MonadUnliftIO )
 import qualified Data.Text                     as T
+import qualified Data.Text.IO                     as TIO
 import           Data.Text                      ( unpack
                                                 , pack
                                                 , Text
@@ -384,18 +386,19 @@ execRT' executable cr2Path pp3Path targetFilePath dlnaMode =
         , rcoPp3FilePath     = pp3Path
         , rcoDlnaPp3FilePath = dlnaPp3FilePath
         }
-      callProcess'' tempFilePath _ = do
+      callProcess'' tempFilePath tempFileHandle = do
         params' <- if dlnaMode
-          then writeDlnaFile tempFilePath *> pure (params (Just tempFilePath))
+          then writeDlnaFile tempFileHandle *> pure (params (Just tempFilePath))
           else pure (params Nothing)
         callProcess' executable params'
   in  IOTemp.withSystemTempFile "rawtherapee-convert-dlna-mode-pp3"
                                 callProcess''
  where
-  writeDlnaFile :: FilePath -> IO ()
-  writeDlnaFile fp =
+  writeDlnaFile :: Handle -> IO ()
+  writeDlnaFile handle =
     let ini = Ini (HashMap.fromList [("Resize", dlnaIniEntries)]) []
-    in  Ini.writeIniFile fp ini
+        iniText = Ini.printIni ini
+    in  TIO.hPutStr handle iniText
 
 data RtCliOptions = RtCliOptions {
   rcoCr2FilePath :: String
