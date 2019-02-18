@@ -84,6 +84,8 @@ import qualified Data.HashMap.Lazy             as HashMap
 import           Data.Ini                       ( Ini(..)
                                                 )
 import           qualified Data.Ini             as Ini
+import Data.Functor (($>))
+import qualified System.IO as SystemIO
 
 newtype RootSourceDir = RootSourceDir FilePath deriving (Show, Eq)
 
@@ -388,7 +390,7 @@ execRT' executable cr2Path pp3Path targetFilePath dlnaMode =
         }
       callProcess'' tempFilePath tempFileHandle = do
         params' <- if dlnaMode
-          then writeDlnaFile tempFileHandle *> pure (params (Just tempFilePath))
+          then writeDlnaFile tempFileHandle $> params (Just tempFilePath)
           else pure (params Nothing)
         callProcess' executable params'
   in  IOTemp.withSystemTempFile "rawtherapee-convert-dlna-mode-pp3"
@@ -397,15 +399,16 @@ execRT' executable cr2Path pp3Path targetFilePath dlnaMode =
   writeDlnaFile :: Handle -> IO ()
   writeDlnaFile handle =
     let ini = Ini (HashMap.fromList [("Resize", dlnaIniEntries)]) []
-        iniText = Ini.printIni ini
-    in  TIO.hPutStr handle iniText
+        iniWriteSettings = Ini.defaultWriteIniSettings { Ini.writeIniKeySeparator = Ini.EqualsKeySeparator }
+        iniText = Ini.printIniWith iniWriteSettings ini
+    in  TIO.hPutStr handle iniText *> SystemIO.hFlush handle
 
 data RtCliOptions = RtCliOptions {
   rcoCr2FilePath :: String
 , rcoTargetFilePath :: String
 , rcoPp3FilePath :: Maybe String
 , rcoDlnaPp3FilePath :: Maybe String
-}
+} deriving Show
 
 toRtCliOptionList :: RtCliOptions -> [String]
 toRtCliOptionList opts =
