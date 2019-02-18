@@ -359,6 +359,7 @@ setDlnaInitEntries (Ini sections globals) = Ini (setResizeSection sections)
                                                 globals
   where setResizeSection = HashMap.adjust (const dlnaIniEntries) dlnaIniEntryKey
 
+--TODO This must work in case there is no targetFilePath yet
 copyBackResultingPp3 :: DlnaMode -> SourceFilePath -> TargetFilePath -> IO ()
 copyBackResultingPp3 False sourceFilePath targetFilePath =
   copyFile (toPp3FilePath targetFilePath) sourceFilePath
