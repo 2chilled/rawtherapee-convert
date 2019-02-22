@@ -250,7 +250,7 @@ isConversionNecessary sourceFilePath targetDirPath maybeDefaultPp3FilePath dlnaM
     contentEquals :: FilePath -> FilePath -> DlnaMode -> IO Bool
     contentEquals fp1 fp2 False = contentEquals' B.readFile fp1 fp2
     contentEquals fp1 fp2 True  = contentEquals'
-      ( (>>= either (\error' -> fail (show error')) (pure . setDlnaInitEntries))
+      ( (>>= either (\error' -> fail (show error')) (pure . setDlnaInitEntries True))
       . Ini.readIniFile
       )
       fp1
@@ -341,32 +341,53 @@ execRTWithoutPp3 executable cr2Path targetFilePath dlnaMode =
 
 dlnaIniEntries :: [(Text, Text)]
 dlnaIniEntries =
-  [ ("Enabled"  , "true")
-  , ("Scale"    , "1")
-  , ("AppliesTo", "Full image")
-  , ("Method"   , "Lanczos")
-  , ("Width"    , "4096")
-  , ("Height"   , "4096")
-  ]
+  dlnaIniEntriesHelper True
+
+noDlnaIniEntries :: [(Text, Text)]
+noDlnaIniEntries =
+  dlnaIniEntriesHelper False
+
+type Enabled = Bool
+
+dlnaIniEntriesHelper :: Enabled -> [(Text, Text)]
+dlnaIniEntriesHelper enabled =
+  if enabled
+  then helper "true"
+  else helper "false"
+  where helper enabledText =
+          [ ("Enabled"  , enabledText)
+          , ("Scale"    , "1")
+          , ("AppliesTo", "Full image")
+          , ("Method"   , "Lanczos")
+          , ("Width"    , "4096")
+          , ("Height"   , "4096")
+          ]
 
 extractDlnaIniEntries :: Ini -> [(Text, Text)]
 extractDlnaIniEntries (Ini sections _) =
   let maybeDlnaIniEntries = HashMap.lookup dlnaIniEntryKey sections
   in  join . maybeToList $ maybeDlnaIniEntries
 
-setDlnaInitEntries :: Ini -> Ini
-setDlnaInitEntries (Ini sections globals) = Ini (setResizeSection sections)
+setDlnaInitEntries :: Enabled -> Ini -> Ini
+setDlnaInitEntries enabled =
+  if enabled
+  then helper dlnaIniEntries
+  else helper noDlnaIniEntries
+  where helper entries (Ini sections globals) = Ini (setResizeSection entries sections)
                                                 globals
-  where setResizeSection = HashMap.adjust (const dlnaIniEntries) dlnaIniEntryKey
+        setResizeSection entries = HashMap.adjust (const entries) dlnaIniEntryKey
 
 --TODO This must work in case there is no targetFilePath yet
-copyBackResultingPp3 :: DlnaMode -> SourceFilePath -> TargetFilePath -> IO ()
+copyBackResultingPp3 :: DlnaMode -> TargetFilePath -> SourceFilePath -> IO ()
 copyBackResultingPp3 False sourceFilePath targetFilePath =
-  copyFile (toPp3FilePath targetFilePath) sourceFilePath
+  copyFile targetFilePath sourceFilePath
 copyBackResultingPp3 True sourceFilePath targetFilePath =
   do
+    sourceFileExists <- doesFileExist sourceFilePath
     Right (targetIni) <- Ini.readIniFile targetFilePath
-    Right (sourceIni) <- Ini.readIniFile sourceFilePath
+    Right (sourceIni) <- if sourceFileExists
+      then Ini.readIniFile sourceFilePath
+      else pure . Right $ setDlnaInitEntries False targetIni
     let dlnaIniEntriesOfSource = extractDlnaIniEntries sourceIni
     let targetIniWithOriginalDlnaEntries =
           let originalDlnaEntries = (HashMap.insert dlnaIniEntryKey dlnaIniEntriesOfSource . Ini.iniSections) targetIni

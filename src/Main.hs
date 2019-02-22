@@ -145,7 +145,7 @@ convert us =
           execRT' pp3FilePath =
             execRT rtExec sourceFilePath pp3FilePath targetFilePath dlnaMode
           dryRun      = usDryRun us
-          execWithPp3 = uncurry (<*) . (execRT' &&& copyBackResultingPp3 dlnaMode sourceFilePath)
+          execWithPp3 = uncurry (<*) . (execRT' &&& copyBackResultingPp3 dlnaMode (toPp3FilePath targetFilePath))
       in  do
             infoM loggerName
               $ (if dryRun then wouldStartConvMsg else startConvMsg)
