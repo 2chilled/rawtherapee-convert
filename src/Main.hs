@@ -62,42 +62,42 @@ convert us =
   let sourceDir = usSourceDir us
       cr2Paths' = cr2Paths (LoggerName loggerName) sourceDir
       convertStream =
-        cr2Paths' .| CC.mapM_ (lift . convertHelper (RootSourceDir sourceDir))
+          cr2Paths' .| CC.mapM_ (lift . convertHelper (RootSourceDir sourceDir))
   in  runResourceT . runConduit $ convertStream
  where
   convertHelper :: RootSourceDir -> SourceFilePath -> IO ()
-  convertHelper rootSourceDir sourceFilePath
-    = let
-        rootTargetDir = RootTargetDir $ usTargetDir us
-        targetDirEither =
-          getTargetDirectoryPath rootSourceDir rootTargetDir sourceFilePath
-        targetDirExceptionLog targetDirException =
-          errorM loggerName
-            $  "Error, this should have been validated: '"
-            <> show targetDirException
-            <> "'"
-        successfulConversionLog targetDir decision = case decision of
-          Converted ->
-            infoM loggerName
-              $  "Successfully converted "
-              <> show sourceFilePath
-              <> " to dir: "
-              <> show targetDir
-          NotConverted ->
-            infoM loggerName $ "No need to convert " <> em sourceFilePath
-        conversionProcess =
-          convertIt sourceFilePath (usDefaultPp3 us) (usDlnaMode us)
-      in
-        void
-        . runExceptT
-        . (>>= liftIO . targetDirExceptionLog)
-        . swapExceptT
-        $ do
-            (decision, targetDir) <-
-              ExceptT
-              $ (\targetDir -> (, targetDir) <$> conversionProcess targetDir)
-              `traverse` targetDirEither
-            liftIO $ successfulConversionLog targetDir decision
+  convertHelper rootSourceDir sourceFilePath =
+    let
+      rootTargetDir = RootTargetDir $ usTargetDir us
+      targetDirEither =
+        getTargetDirectoryPath rootSourceDir rootTargetDir sourceFilePath
+      targetDirExceptionLog targetDirException =
+        errorM loggerName
+          $  "Error, this should have been validated: '"
+          <> show targetDirException
+          <> "'"
+      successfulConversionLog targetDir decision = case decision of
+        Converted ->
+          infoM loggerName
+            $  "Successfully converted "
+            <> show sourceFilePath
+            <> " to dir: "
+            <> show targetDir
+        NotConverted ->
+          infoM loggerName $ "No need to convert " <> em sourceFilePath
+      conversionProcess =
+        convertIt sourceFilePath (usDefaultPp3 us) (usDlnaMode us)
+    in
+      void
+      . runExceptT
+      . (>>= liftIO . targetDirExceptionLog)
+      . swapExceptT
+      $ do
+          (decision, targetDir) <-
+            ExceptT
+            $ (\targetDir -> (, targetDir) <$> conversionProcess targetDir)
+            `traverse` targetDirEither
+          liftIO $ successfulConversionLog targetDir decision
 
   convertIt
     :: SourceFilePath
@@ -131,29 +131,36 @@ convert us =
     -> TargetDirPath
     -> IO ()
   convertItFinally rtExec sourceFilePath maybePp3FilePath dlnaMode targetDirPath
-    = let resultErrorLog exception =
-            errorM loggerName
-              $  "Failed to convert file "
-              <> em sourceFilePath
-              <> ": "
-              <> show exception
-          targetFilePath =
-            targetDirPath
-              </> ((`replaceExtension` "jpg") . takeFileName $ sourceFilePath)
-          execRTWithoutPp3' =
-            execRTWithoutPp3 rtExec sourceFilePath targetFilePath dlnaMode
-          execRT' pp3FilePath =
-            execRT rtExec sourceFilePath pp3FilePath targetFilePath dlnaMode
-          dryRun      = usDryRun us
-          execWithPp3 = uncurry (<*) . (execRT' &&& copyBackResultingPp3 dlnaMode (toPp3FilePath targetFilePath))
-      in  do
-            infoM loggerName
-              $ (if dryRun then wouldStartConvMsg else startConvMsg)
-                  sourceFilePath
-            resultEither <- if dryRun
-              then pure . Right $ ()
-              else (execRTWithoutPp3' `maybe` execWithPp3) maybePp3FilePath
-            (resultErrorLog `either` (const . pure $ ())) resultEither
+    = let
+        resultErrorLog exception =
+          errorM loggerName
+            $  "Failed to convert file "
+            <> em sourceFilePath
+            <> ": "
+            <> show exception
+        targetFilePath =
+          targetDirPath
+            </> ((`replaceExtension` "jpg") . takeFileName $ sourceFilePath)
+        execRTWithoutPp3' =
+          execRTWithoutPp3 rtExec sourceFilePath targetFilePath dlnaMode
+        execRT' pp3FilePath =
+          execRT rtExec sourceFilePath pp3FilePath targetFilePath dlnaMode
+        dryRun = usDryRun us
+        execWithPp3 =
+          uncurry (<*)
+            . (execRT' &&& copyBackResultingPp3
+                dlnaMode
+                (toPp3FilePath targetFilePath)
+              )
+      in
+        do
+          infoM loggerName
+            $ (if dryRun then wouldStartConvMsg else startConvMsg)
+                sourceFilePath
+          resultEither <- if dryRun
+            then pure . Right $ ()
+            else (execRTWithoutPp3' `maybe` execWithPp3) maybePp3FilePath
+          (resultErrorLog `either` (const . pure $ ())) resultEither
    where
     wouldStartConvMsg fp = "Would start conversion of file " <> em fp
     startConvMsg fp = "Starting conversion of file " <> em fp
@@ -192,10 +199,10 @@ validateInputs = getArgs >>= (runExceptT . validateHelper)
   validateFlagExistence us =
     let mustBeProvidedMsg option = option <> " option must be provided"
         errorTuples =
-          [ (usSourceDir, mustBeProvidedMsg "-b")
-          , (usTargetDir, mustBeProvidedMsg "-t")
-          , (usRtExec   , mustBeProvidedMsg "-e")
-          ]
+            [ (usSourceDir, mustBeProvidedMsg "-b")
+            , (usTargetDir, mustBeProvidedMsg "-t")
+            , (usRtExec   , mustBeProvidedMsg "-e")
+            ]
         exceptionStrings = do
           (f, errorString) <- errorTuples
           [ errorString | f us == "" ]
@@ -212,48 +219,48 @@ validateInputs = getArgs >>= (runExceptT . validateHelper)
 
 optDescriptions
   :: [OptDescr (UserSettings -> InputExceptionEither UserSettings)]
-optDescriptions
-  = [ Option
-      ['b']
-      ["baseDir"]
-      (ReqArg
-        (\sourceDir us ->
-          (\fp -> us { usSourceDir = fp }) <$> directoryValidation sourceDir
-        )
-        "/home/user/pics"
+optDescriptions =
+  [ Option
+    ['b']
+    ["baseDir"]
+    (ReqArg
+      (\sourceDir us ->
+        (\fp -> us { usSourceDir = fp }) <$> directoryValidation sourceDir
       )
-      "Base dir to look for raw files"
-    , Option
-      ['t']
-      ["targetDir"]
-      (ReqArg
-        (\targetDir us ->
-          (\fp -> us { usTargetDir = fp }) <$> directoryValidation targetDir
-        )
-        "/home/user/pics_converted"
+      "/home/user/pics"
+    )
+    "Base dir to look for raw files"
+  , Option
+    ['t']
+    ["targetDir"]
+    (ReqArg
+      (\targetDir us ->
+        (\fp -> us { usTargetDir = fp }) <$> directoryValidation targetDir
       )
-      "Target dir where converted pictures will be saved to"
-    , Option
-      ['e']
-      ["executable"]
-      (ReqArg
-        (\executablePath us ->
-          (\e -> us { usRtExec = e }) <$> executableValidation executablePath
-        )
-        "/usr/bin/rawtherapee"
+      "/home/user/pics_converted"
+    )
+    "Target dir where converted pictures will be saved to"
+  , Option
+    ['e']
+    ["executable"]
+    (ReqArg
+      (\executablePath us ->
+        (\e -> us { usRtExec = e }) <$> executableValidation executablePath
       )
-      "Path to the rawtherapee executable"
-    , Option
-      ['n']
-      ["dryRun"]
-      (NoArg (\us -> pure $ us { usDryRun = True }))
-      "(Optional) Enable dry run doing nothing but printing what would be done"
-    , Option
-      ['d']
-      ["dlnaMode"]
-      (NoArg (\us -> pure $ us { usDlnaMode = True }))
-      "(Optional) Enable DLNA mode to limit resolution of converted pictures to match DLNA constraints"
-    ]
+      "/usr/bin/rawtherapee"
+    )
+    "Path to the rawtherapee executable"
+  , Option
+    ['n']
+    ["dryRun"]
+    (NoArg (\us -> pure $ us { usDryRun = True }))
+    "(Optional) Enable dry run doing nothing but printing what would be done"
+  , Option
+    ['d']
+    ["dlnaMode"]
+    (NoArg (\us -> pure $ us { usDlnaMode = True }))
+    "(Optional) Enable DLNA mode to limit resolution of converted pictures to match DLNA constraints"
+  ]
  where
   directoryValidation :: FilePath -> InputExceptionEither FilePath
   directoryValidation fp = do
@@ -299,14 +306,13 @@ data UserSettings = UserSettings {
 } deriving (Show, Eq)
 
 emptyUserSettings :: UserSettings
-emptyUserSettings = UserSettings
-  { usSourceDir  = ""
-  , usTargetDir  = ""
-  , usDefaultPp3 = Nothing
-  , usRtExec     = ""
-  , usDryRun     = False
-  , usDlnaMode   = False
-  }
+emptyUserSettings = UserSettings { usSourceDir  = ""
+                                 , usTargetDir  = ""
+                                 , usDefaultPp3 = Nothing
+                                 , usRtExec     = ""
+                                 , usDryRun     = False
+                                 , usDlnaMode   = False
+                                 }
 
 --Logging
 

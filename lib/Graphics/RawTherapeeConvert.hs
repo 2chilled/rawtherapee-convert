@@ -28,7 +28,7 @@ module Graphics.RawTherapeeConvert
   )
 where
 
-import System.IO(Handle)
+import           System.IO                      ( Handle )
 import           Control.Monad.Trans.Resource   ( MonadResource )
 import           Control.Monad.IO.Class         ( liftIO )
 import           Control.Monad                  ( when
@@ -47,7 +47,7 @@ import           Data.Conduit                   ( (.|)
                                                 )
 import           Conduit                        ( MonadUnliftIO )
 import qualified Data.Text                     as T
-import qualified Data.Text.IO                     as TIO
+import qualified Data.Text.IO                  as TIO
 import           Data.Text                      ( unpack
                                                 , pack
                                                 , Text
@@ -81,11 +81,10 @@ import           Control.Monad.Trans.Except     ( ExceptT(..)
                                                 , withExceptT
                                                 )
 import qualified Data.HashMap.Lazy             as HashMap
-import           Data.Ini                       ( Ini(..)
-                                                )
-import           qualified Data.Ini             as Ini
-import Data.Functor (($>))
-import qualified System.IO as SystemIO
+import           Data.Ini                       ( Ini(..) )
+import qualified Data.Ini                      as Ini
+import           Data.Functor                   ( ($>) )
+import qualified System.IO                     as SystemIO
 
 newtype RootSourceDir = RootSourceDir FilePath deriving (Show, Eq)
 
@@ -110,15 +109,15 @@ filePaths (LoggerName loggerName) =
         maybeConduit   = CC.map (const Nothing `either` Just)
         filteredBySome = CC.concatMap id
         logConduit =
-          let msg exception = "Could not access file: " <> show exception
-              printMsg  = liftIO . infoM loggerName . msg
-              doNothing = const . return $ ()
-          in  CC.iterM $ printMsg `either` doNothing
+            let msg exception = "Could not access file: " <> show exception
+                printMsg  = liftIO . infoM loggerName . msg
+                doNothing = const . return $ ()
+            in  CC.iterM $ printMsg `either` doNothing
         catched = handleC (\e -> yield (Left (e :: IOException)))
     in  catched (conduit .| eitherConduit)
-        .| logConduit
-        .| maybeConduit
-        .| filteredBySome
+          .| logConduit
+          .| maybeConduit
+          .| filteredBySome
 
 cr2Paths
   :: (MonadResource m, MonadUnliftIO m)
@@ -206,51 +205,51 @@ isConversionNecessary sourceFilePath targetDirPath maybeDefaultPp3FilePath dlnaM
   assertFileExists :: FilePath -> IO x -> ExceptT Bool IO Bool
   assertFileExists fp ifNot =
     let handler fileExists' =
-          if fileExists' then Right True else Left $ True <$ ifNot
+            if fileExists' then Right True else Left $ True <$ ifNot
     in  ExceptT . joinLeftSide $ handler <$> doesFileExist fp
    where
     joinLeftSide :: IO (Either (IO a) b) -> IO (Either a b)
     joinLeftSide io = io >>= ((Left <$>) `either` (pure . Right))
 
   equalsTargetPp3FilePath :: PP3FilePath -> DlnaMode -> IO Bool
-  equalsTargetPp3FilePath sourcePp3 dlnaMode'
-    = let
-        targetPp3            = buildTargetPp3FilePath
-        alternativeTargetPp3 = buildAlternativeTargetPp3FilePath
-        targetPp3s           = [targetPp3, alternativeTargetPp3]
-        result               = do
-          targetPp3ExistsResult <- liftIO $ doesFileExist `traverse` targetPp3s
-          let
-            (targetPp3Exists, targetPp3') =
-              let
-                existMaybe =
-                  ((== True) . fst)
-                    `find` (targetPp3ExistsResult `zip` targetPp3s)
-              in  (False, targetPp3) `fromMaybe` existMaybe
-          _ <- if targetPp3Exists
-            then ExceptT . pure $ Right ()
-            else
-              ExceptT
-              $  Left ()
-              <$ logTargetPp3FilePathDoesNotExistMsg targetPp3'
-          result' <- liftIO $ contentEquals sourcePp3 targetPp3' dlnaMode'
-          _       <-
-            when (not result')
-            . liftIO
-            . putStrLn
-            $ (  "source pp3 file "
-              <> em sourcePp3
-              <> " does not equal "
-              <> em targetPp3'
-              )
-          pure result'
-      in
-        (const False `either` id) <$> runExceptT result
+  equalsTargetPp3FilePath sourcePp3 dlnaMode' =
+    let
+      targetPp3            = buildTargetPp3FilePath
+      alternativeTargetPp3 = buildAlternativeTargetPp3FilePath
+      targetPp3s           = [targetPp3, alternativeTargetPp3]
+      result               = do
+        targetPp3ExistsResult <- liftIO $ doesFileExist `traverse` targetPp3s
+        let
+          (targetPp3Exists, targetPp3') =
+            let
+              existMaybe =
+                ((== True) . fst)
+                  `find` (targetPp3ExistsResult `zip` targetPp3s)
+            in  (False, targetPp3) `fromMaybe` existMaybe
+        _ <- if targetPp3Exists
+          then ExceptT . pure $ Right ()
+          else
+            ExceptT $ Left () <$ logTargetPp3FilePathDoesNotExistMsg targetPp3'
+        result' <- liftIO $ contentEquals sourcePp3 targetPp3' dlnaMode'
+        _       <-
+          when (not result')
+          . liftIO
+          . putStrLn
+          $ (  "source pp3 file "
+            <> em sourcePp3
+            <> " does not equal "
+            <> em targetPp3'
+            )
+        pure result'
+    in
+      (const False `either` id) <$> runExceptT result
    where
     contentEquals :: FilePath -> FilePath -> DlnaMode -> IO Bool
     contentEquals fp1 fp2 False = contentEquals' B.readFile fp1 fp2
     contentEquals fp1 fp2 True  = contentEquals'
-      ( (>>= either (\error' -> fail (show error')) (pure . setDlnaInitEntries True))
+      ( (>>= either (\error' -> fail (show error'))
+                    (pure . setDlnaInitEntries True)
+        )
       . Ini.readIniFile
       )
       fp1
@@ -340,28 +339,26 @@ execRTWithoutPp3 executable cr2Path targetFilePath dlnaMode =
   execRT' executable cr2Path Nothing targetFilePath dlnaMode
 
 dlnaIniEntries :: [(Text, Text)]
-dlnaIniEntries =
-  dlnaIniEntriesHelper True
+dlnaIniEntries = dlnaIniEntriesHelper True
 
 noDlnaIniEntries :: [(Text, Text)]
-noDlnaIniEntries =
-  dlnaIniEntriesHelper False
+noDlnaIniEntries = dlnaIniEntriesHelper False
 
 type Enabled = Bool
 
 dlnaIniEntriesHelper :: Enabled -> [(Text, Text)]
-dlnaIniEntriesHelper enabled =
-  if enabled
+dlnaIniEntriesHelper enabled = if enabled
   then helper "true"
   else helper "false"
-  where helper enabledText =
-          [ ("Enabled"  , enabledText)
-          , ("Scale"    , "1")
-          , ("AppliesTo", "Full image")
-          , ("Method"   , "Lanczos")
-          , ("Width"    , "4096")
-          , ("Height"   , "4096")
-          ]
+ where
+  helper enabledText =
+    [ ("Enabled"  , enabledText)
+    , ("Scale"    , "1")
+    , ("AppliesTo", "Full image")
+    , ("Method"   , "Lanczos")
+    , ("Width"    , "4096")
+    , ("Height"   , "4096")
+    ]
 
 extractDlnaIniEntries :: Ini -> [(Text, Text)]
 extractDlnaIniEntries (Ini sections _) =
@@ -369,30 +366,35 @@ extractDlnaIniEntries (Ini sections _) =
   in  join . maybeToList $ maybeDlnaIniEntries
 
 setDlnaInitEntries :: Enabled -> Ini -> Ini
-setDlnaInitEntries enabled =
-  if enabled
+setDlnaInitEntries enabled = if enabled
   then helper dlnaIniEntries
   else helper noDlnaIniEntries
-  where helper entries (Ini sections globals) = Ini (setResizeSection entries sections)
-                                                globals
-        setResizeSection entries = HashMap.adjust (const entries) dlnaIniEntryKey
+ where
+  helper entries (Ini sections globals) =
+    Ini (setResizeSection entries sections) globals
+  setResizeSection entries = HashMap.adjust (const entries) dlnaIniEntryKey
 
 --TODO This must work in case there is no targetFilePath yet
 copyBackResultingPp3 :: DlnaMode -> TargetFilePath -> SourceFilePath -> IO ()
 copyBackResultingPp3 False sourceFilePath targetFilePath =
   copyFile targetFilePath sourceFilePath
-copyBackResultingPp3 True sourceFilePath targetFilePath =
-  do
-    sourceFileExists <- doesFileExist sourceFilePath
-    Right (targetIni) <- Ini.readIniFile targetFilePath
-    Right (sourceIni) <- if sourceFileExists
-      then Ini.readIniFile sourceFilePath
-      else pure . Right $ setDlnaInitEntries False targetIni
-    let dlnaIniEntriesOfSource = extractDlnaIniEntries sourceIni
-    let targetIniWithOriginalDlnaEntries =
-          let originalDlnaEntries = (HashMap.insert dlnaIniEntryKey dlnaIniEntriesOfSource . Ini.iniSections) targetIni
-          in targetIni { Ini.iniSections = originalDlnaEntries}
-    Ini.writeIniFile sourceFilePath targetIniWithOriginalDlnaEntries
+copyBackResultingPp3 True sourceFilePath targetFilePath = do
+  sourceFileExists  <- doesFileExist sourceFilePath
+  Right (targetIni) <- Ini.readIniFile targetFilePath
+  Right (sourceIni) <- if sourceFileExists
+    then Ini.readIniFile sourceFilePath
+    else pure . Right $ setDlnaInitEntries False targetIni
+  let dlnaIniEntriesOfSource = extractDlnaIniEntries sourceIni
+  let
+    targetIniWithOriginalDlnaEntries =
+      let
+        originalDlnaEntries =
+          ( HashMap.insert dlnaIniEntryKey dlnaIniEntriesOfSource
+            . Ini.iniSections
+            )
+            targetIni
+      in  targetIni { Ini.iniSections = originalDlnaEntries }
+  Ini.writeIniFile sourceFilePath targetIniWithOriginalDlnaEntries
 
 -- private
 
@@ -421,7 +423,9 @@ execRT' executable cr2Path pp3Path targetFilePath dlnaMode =
   writeDlnaFile :: Handle -> IO ()
   writeDlnaFile handle =
     let ini = Ini (HashMap.fromList [("Resize", dlnaIniEntries)]) []
-        iniWriteSettings = Ini.defaultWriteIniSettings { Ini.writeIniKeySeparator = Ini.EqualsKeySeparator }
+        iniWriteSettings = Ini.defaultWriteIniSettings
+          { Ini.writeIniKeySeparator = Ini.EqualsKeySeparator
+          }
         iniText = Ini.printIniWith iniWriteSettings ini
     in  TIO.hPutStr handle iniText *> SystemIO.hFlush handle
 
